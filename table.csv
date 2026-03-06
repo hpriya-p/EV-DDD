@@ -1,0 +1,8 @@
+      id  heuristic cost  default cost heuristic size  default size  heuristic iter  default iter
+190689be           30.00     30.000000    (730, 8378) (1112, 11181)               2             3
+2f996dca           30.00     30.000000  (1060, 10906) (3338, 39742)               2             2
+c1fa89f5          128.75    126.571429    (517, 2935) (1474, 11962)              15            28
+f6c8416c           30.00     30.000000    (921, 8660) (3322, 44064)               2             2
+fc553e02          128.75    126.571429    (830, 5151) (4024, 45412)              15            34
+
+Saved to results/results_table.csv

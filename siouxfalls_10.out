@@ -1,0 +1,560 @@
+Size of network:  2112  nodes,  13478  edges
+constructed instance
+'''' LOGGING ''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 13808 rows, 27004 columns and 67270 nonzeros
+Model fingerprint: 0x1e2c5a5a
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8236 rows and 10729 columns
+Presolve time: 0.02s
+Presolved: 5572 rows, 16275 columns, 39936 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.02s
+
+Barrier performed 0 iterations in 0.04 seconds (0.04 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+     256    3.0000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 256 iterations and 0.05 seconds (0.04 work units)
+Optimal objective  3.000000000e+02
+Iteration:  1
+Size of network:  2112  nodes,  13478  edges
+Obj Value:  300.0
+New edge added:  ((1, 6, 0), (3, 4, 4), 0)  Edge removed:  ((1, 6, 0), (3, 6, 1), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (12, 2, 8)): 10.0, ((12, 2, 8), (13, 1, 11)): 10.0, ((13, 1, 11), (13, 1, 99)): 10.0}, 'x_ener': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (12, 2, 8)): 10.0, ((12, 2, 8), (13, 1, 11)): 10.0, ((13, 1, 11), (13, 1, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 12885 rows, 24496 columns and 61008 nonzeros
+Model fingerprint: 0x6911d149
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 775 rows and 0 columns
+Presolve time: 0.00s
+
+Solved in 0 iterations and 0.00 seconds (0.00 work units)
+Infeasible model
+Local edge updates missed some new edges... recompute full network
+  0%|          | 0/24 [00:00<?, ?it/s]  8%|▊         | 2/24 [00:00<00:03,  6.32it/s] 17%|█▋        | 4/24 [00:00<00:04,  4.76it/s] 21%|██        | 5/24 [00:01<00:04,  4.05it/s] 25%|██▌       | 6/24 [00:01<00:04,  3.96it/s] 29%|██▉       | 7/24 [00:01<00:04,  3.42it/s] 33%|███▎      | 8/24 [00:02<00:04,  3.26it/s] 38%|███▊      | 9/24 [00:02<00:04,  3.07it/s] 42%|████▏     | 10/24 [00:02<00:04,  2.91it/s] 46%|████▌     | 11/24 [00:03<00:04,  2.85it/s] 50%|█████     | 12/24 [00:03<00:04,  2.88it/s] 54%|█████▍    | 13/24 [00:03<00:03,  2.75it/s] 58%|█████▊    | 14/24 [00:04<00:03,  2.63it/s] 62%|██████▎   | 15/24 [00:04<00:03,  2.58it/s] 67%|██████▋   | 16/24 [00:05<00:02,  2.71it/s] 71%|███████   | 17/24 [00:05<00:02,  2.89it/s] 75%|███████▌  | 18/24 [00:05<00:01,  3.16it/s] 79%|███████▉  | 19/24 [00:06<00:01,  3.09it/s] 83%|████████▎ | 20/24 [00:06<00:01,  3.12it/s] 88%|████████▊ | 21/24 [00:06<00:00,  3.07it/s] 92%|█████████▏| 22/24 [00:07<00:00,  2.87it/s] 96%|█████████▌| 23/24 [00:07<00:00,  2.86it/s]100%|██████████| 24/24 [00:07<00:00,  2.88it/s]100%|██████████| 24/24 [00:07<00:00,  3.09it/s]
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 13842 rows, 27068 columns and 67448 nonzeros
+Model fingerprint: 0x9c282213
+Variable types: 0 continuous, 27068 integer (24 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8045 rows and 13024 columns
+Presolve time: 0.04s
+Presolved: 5797 rows, 14044 columns, 34276 nonzeros
+Variable types: 0 continuous, 14044 integer (4 binary)
+Found heuristic solution: objective 7700.0000000
+
+Root relaxation: objective 3.000000e+02, 203 iterations, 0.00 seconds (0.01 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0     300.0000000  300.00000  0.00%     -    0s
+
+Explored 1 nodes (203 simplex iterations) in 0.08 seconds (0.12 work units)
+Thread count was 12 (of 12 available processors)
+
+Solution count 2: 300 7700 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 3.000000000000e+02, best bound 3.000000000000e+02, gap 0.0000%
+Iteration:  2
+Size of network:  2139  nodes,  13510  edges
+Obj Value:  300.0
+New edge added:  ((1, 10, 0), (3, 8, 4), 0)  Edge removed:  ((1, 10, 0), (3, 10, 4), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'x_ener': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 12937 rows, 24496 columns and 61008 nonzeros
+Model fingerprint: 0xf331f8f3
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 827 rows and 0 columns
+Presolve time: 0.00s
+
+Solved in 0 iterations and 0.00 seconds (0.00 work units)
+Infeasible model
+Local edge updates missed some new edges... recompute full network
+  0%|          | 0/24 [00:00<?, ?it/s]  8%|▊         | 2/24 [00:00<00:03,  6.86it/s] 12%|█▎        | 3/24 [00:00<00:02,  7.36it/s] 17%|█▋        | 4/24 [00:00<00:04,  4.26it/s] 21%|██        | 5/24 [00:01<00:05,  3.67it/s] 25%|██▌       | 6/24 [00:01<00:04,  3.73it/s] 29%|██▉       | 7/24 [00:01<00:05,  3.22it/s] 33%|███▎      | 8/24 [00:02<00:05,  3.07it/s] 38%|███▊      | 9/24 [00:02<00:05,  2.90it/s] 42%|████▏     | 10/24 [00:02<00:05,  2.76it/s] 46%|████▌     | 11/24 [00:03<00:04,  2.75it/s] 50%|█████     | 12/24 [00:03<00:04,  2.78it/s] 54%|█████▍    | 13/24 [00:04<00:04,  2.65it/s] 58%|█████▊    | 14/24 [00:04<00:03,  2.53it/s] 62%|██████▎   | 15/24 [00:04<00:03,  2.48it/s] 67%|██████▋   | 16/24 [00:05<00:03,  2.61it/s] 71%|███████   | 17/24 [00:05<00:02,  2.81it/s] 75%|███████▌  | 18/24 [00:05<00:01,  3.03it/s] 79%|███████▉  | 19/24 [00:06<00:01,  2.98it/s] 83%|████████▎ | 20/24 [00:06<00:01,  3.02it/s] 88%|████████▊ | 21/24 [00:06<00:01,  2.94it/s] 92%|█████████▏| 22/24 [00:07<00:00,  2.76it/s] 96%|█████████▌| 23/24 [00:07<00:00,  2.77it/s]100%|██████████| 24/24 [00:08<00:00,  2.78it/s]100%|██████████| 24/24 [00:08<00:00,  2.99it/s]
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14107 rows, 27596 columns and 68788 nonzeros
+Model fingerprint: 0x9af4fb1a
+Variable types: 0 continuous, 27596 integer (24 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8217 rows and 13211 columns
+Presolve time: 0.04s
+Presolved: 5890 rows, 14385 columns, 35067 nonzeros
+Variable types: 0 continuous, 14385 integer (4 binary)
+
+Root relaxation: objective 3.000000e+02, 250 iterations, 0.00 seconds (0.01 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0     300.0000000  300.00000  0.00%     -    0s
+
+Explored 1 nodes (250 simplex iterations) in 0.08 seconds (0.13 work units)
+Thread count was 12 (of 12 available processors)
+
+Solution count 1: 300 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 3.000000000000e+02, best bound 3.000000000000e+02, gap 0.0000%
+Iteration:  3
+Size of network:  2162  nodes,  13774  edges
+Obj Value:  300.0
+New edge added:  ((3, 4, 4), (12, 2, 8), 0)  Edge removed:  ((3, 4, 4), (12, 6, 6), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (12, 2, 8)): 10.0, ((12, 2, 8), (13, 1, 11)): 10.0, ((13, 1, 11), (13, 1, 99)): 10.0}, 'x_ener': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (12, 2, 8)): 10.0, ((12, 2, 8), (13, 1, 11)): 10.0, ((13, 1, 11), (13, 1, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 12608 rows, 23748 columns and 59012 nonzeros
+Model fingerprint: 0x820429f2
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 7746 rows and 9538 columns
+Presolve time: 0.02s
+Presolved: 4862 rows, 14210 columns, 35328 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.03s
+
+Barrier performed 0 iterations in 0.05 seconds (0.04 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+     768    6.2000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 768 iterations and 0.06 seconds (0.07 work units)
+Optimal objective  6.200000000e+02
+Iteration:  4
+Size of network:  2163  nodes,  11850  edges
+Obj Value:  620.0
+New edge added:  ((1, 10, 0), (2, 7, 6), 0)  Edge removed:  ((1, 10, 0), (2, 10, 6), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 10, 0), (2, 7, 6)): 10.0, ((2, 7, 6), (6, 4, 11)): 10.0, ((6, 4, 11), (8, 3, 13)): 10.0, ((8, 3, 13), (7, 2, 16)): 10.0, ((7, 2, 16), (18, 1, 18)): 10.0, ((18, 1, 18), (18, 1, 99)): 10.0}, 'x_ener': {((1, 10, 0), (2, 7, 6)): 10.0, ((2, 7, 6), (6, 4, 11)): 10.0, ((6, 4, 11), (8, 3, 13)): 10.0, ((8, 3, 13), (7, 2, 16)): 10.0, ((7, 2, 16), (18, 1, 18)): 10.0, ((18, 1, 18), (18, 1, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 12290 rows, 22284 columns and 55520 nonzeros
+Model fingerprint: 0xf2609320
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 1210 rows and 0 columns
+Presolve time: 0.00s
+
+Solved in 0 iterations and 0.00 seconds (0.00 work units)
+Infeasible model
+Local edge updates missed some new edges... recompute full network
+  0%|          | 0/24 [00:00<?, ?it/s]  8%|▊         | 2/24 [00:00<00:01, 18.63it/s] 17%|█▋        | 4/24 [00:00<00:03,  5.92it/s] 25%|██▌       | 6/24 [00:01<00:03,  5.32it/s] 29%|██▉       | 7/24 [00:01<00:04,  4.07it/s] 33%|███▎      | 8/24 [00:01<00:04,  3.69it/s] 38%|███▊      | 9/24 [00:02<00:04,  3.22it/s] 42%|████▏     | 10/24 [00:02<00:04,  2.89it/s] 46%|████▌     | 11/24 [00:03<00:04,  2.77it/s] 50%|█████     | 12/24 [00:03<00:04,  2.73it/s] 54%|█████▍    | 13/24 [00:03<00:04,  2.57it/s] 58%|█████▊    | 14/24 [00:04<00:04,  2.46it/s] 62%|██████▎   | 15/24 [00:04<00:03,  2.42it/s] 67%|██████▋   | 16/24 [00:05<00:03,  2.54it/s] 71%|███████   | 17/24 [00:05<00:02,  2.73it/s] 75%|███████▌  | 18/24 [00:05<00:01,  3.15it/s] 79%|███████▉  | 19/24 [00:05<00:01,  3.02it/s] 83%|████████▎ | 20/24 [00:06<00:01,  3.02it/s] 88%|████████▊ | 21/24 [00:06<00:01,  2.92it/s] 92%|█████████▏| 22/24 [00:07<00:00,  2.72it/s] 96%|█████████▌| 23/24 [00:07<00:00,  2.72it/s]100%|██████████| 24/24 [00:07<00:00,  2.70it/s]100%|██████████| 24/24 [00:07<00:00,  3.06it/s]
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14229 rows, 27918 columns and 69591 nonzeros
+Model fingerprint: 0x1fec8c09
+Variable types: 0 continuous, 27918 integer (24 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8134 rows and 12813 columns
+Presolve time: 0.04s
+Presolved: 6095 rows, 15105 columns, 36662 nonzeros
+Variable types: 0 continuous, 15105 integer (4 binary)
+
+Root relaxation: objective 3.000000e+02, 260 iterations, 0.01 seconds (0.01 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0     300.0000000  300.00000  0.00%     -    0s
+
+Explored 1 nodes (260 simplex iterations) in 0.09 seconds (0.13 work units)
+Thread count was 12 (of 12 available processors)
+
+Solution count 1: 300 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 3.000000000000e+02, best bound 3.000000000000e+02, gap 0.0000%
+Iteration:  5
+Size of network:  2211  nodes,  13935  edges
+Obj Value:  300.0
+New edge added:  ((12, 6, 8), (13, 5, 11), 0)  Edge removed:  ((12, 6, 8), (13, 6, 11), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'x_ener': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 13324 rows, 25346 columns and 63080 nonzeros
+Model fingerprint: 0xc48474d6
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8158 rows and 10214 columns
+Presolve time: 0.02s
+Presolved: 5166 rows, 15132 columns, 37720 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.03s
+
+Barrier performed 0 iterations in 0.05 seconds (0.04 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+     686    4.8000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 686 iterations and 0.06 seconds (0.07 work units)
+Optimal objective  4.800000000e+02
+Iteration:  6
+Size of network:  2212  nodes,  12649  edges
+Obj Value:  480.0
+New edge added:  ((3, 4, 4), (4, 2, 8), 0)  Edge removed:  ((3, 4, 4), (4, 6, 6), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (4, 2, 8)): 10.0, ((4, 2, 8), (4, 2, 99)): 10.0}, 'x_ener': {((1, 6, 0), (3, 4, 4)): 10.0, ((3, 4, 4), (4, 2, 8)): 10.0, ((4, 2, 8), (4, 2, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 12051 rows, 21782 columns and 54139 nonzeros
+Model fingerprint: 0x78b0b129
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 7716 rows and 9009 columns
+Presolve time: 0.02s
+Presolved: 4335 rows, 12773 columns, 31990 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.03s
+
+Barrier performed 0 iterations in 0.06 seconds (0.04 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+     876    6.2000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 876 iterations and 0.07 seconds (0.08 work units)
+Optimal objective  6.200000000e+02
+Iteration:  7
+Size of network:  2213  nodes,  10867  edges
+Obj Value:  620.0
+New edge added:  ((1, 6, 0), (2, 3, 6), 0)  Edge removed:  ((1, 6, 0), (2, 6, 6), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 6, 0), (2, 3, 6)): 10.0, ((2, 3, 6), (6, 0, 11)): 10.0, ((6, 0, 11), (6, 0, 99)): 10.0}, 'x_ener': {((1, 6, 0), (2, 3, 6)): 10.0, ((2, 3, 6), (6, 0, 11)): 10.0, ((6, 0, 11), (6, 0, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 11693 rows, 20072 columns and 50033 nonzeros
+Model fingerprint: 0x971c7831
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 1642 rows and 0 columns
+Presolve time: 0.00s
+
+Solved in 0 iterations and 0.00 seconds (0.00 work units)
+Infeasible model
+Local edge updates missed some new edges... recompute full network
+  0%|          | 0/24 [00:00<?, ?it/s]  8%|▊         | 2/24 [00:00<00:01, 16.34it/s] 17%|█▋        | 4/24 [00:00<00:03,  6.44it/s] 25%|██▌       | 6/24 [00:00<00:02,  8.78it/s] 33%|███▎      | 8/24 [00:01<00:03,  5.09it/s] 38%|███▊      | 9/24 [00:01<00:03,  4.13it/s] 42%|████▏     | 10/24 [00:02<00:03,  3.50it/s] 46%|████▌     | 11/24 [00:02<00:04,  3.22it/s] 50%|█████     | 12/24 [00:02<00:03,  3.06it/s] 54%|█████▍    | 13/24 [00:03<00:03,  2.80it/s] 58%|█████▊    | 14/24 [00:03<00:03,  2.59it/s] 62%|██████▎   | 15/24 [00:04<00:03,  2.50it/s] 67%|██████▋   | 16/24 [00:04<00:03,  2.59it/s] 71%|███████   | 17/24 [00:04<00:02,  2.74it/s] 79%|███████▉  | 19/24 [00:05<00:01,  3.47it/s] 83%|████████▎ | 20/24 [00:05<00:01,  3.32it/s] 88%|████████▊ | 21/24 [00:06<00:00,  3.11it/s] 92%|█████████▏| 22/24 [00:06<00:00,  2.83it/s] 96%|█████████▌| 23/24 [00:06<00:00,  2.77it/s]100%|██████████| 24/24 [00:07<00:00,  2.75it/s]100%|██████████| 24/24 [00:07<00:00,  3.32it/s]
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14467 rows, 28524 columns and 71105 nonzeros
+Model fingerprint: 0x2e249e6c
+Variable types: 0 continuous, 28524 integer (24 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8180 rows and 12691 columns
+Presolve time: 0.04s
+Presolved: 6287 rows, 15833 columns, 38309 nonzeros
+Variable types: 0 continuous, 15833 integer (4 binary)
+
+Root relaxation: objective 3.000000e+02, 317 iterations, 0.01 seconds (0.01 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0     300.0000000  300.00000  0.00%     -    0s
+
+Explored 1 nodes (317 simplex iterations) in 0.09 seconds (0.15 work units)
+Thread count was 12 (of 12 available processors)
+
+Solution count 1: 300 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 3.000000000000e+02, best bound 3.000000000000e+02, gap 0.0000%
+Iteration:  8
+Size of network:  2282  nodes,  14238  edges
+Obj Value:  300.0
+New edge added:  ((13, 5, 11), (24, 3, 15), 0)  Edge removed:  ((13, 5, 11), (24, 6, 11), 0)
+Solution cannot be extended to a feasible solution, updating network...
+{'x_load': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'x_ener': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}}
+'''''''''''''''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 13379 rows, 25604 columns and 63650 nonzeros
+Model fingerprint: 0x8df636ef
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 819 rows and 0 columns
+Presolve time: 0.00s
+
+Solved in 0 iterations and 0.00 seconds (0.00 work units)
+Infeasible model
+Local edge updates missed some new edges... recompute full network
+  0%|          | 0/24 [00:00<?, ?it/s]  4%|▍         | 1/24 [00:00<00:06,  3.80it/s]  8%|▊         | 2/24 [00:00<00:09,  2.27it/s] 12%|█▎        | 3/24 [00:01<00:12,  1.68it/s] 17%|█▋        | 4/24 [00:02<00:10,  1.90it/s] 21%|██        | 5/24 [00:02<00:10,  1.84it/s] 25%|██▌       | 6/24 [00:02<00:08,  2.11it/s] 29%|██▉       | 7/24 [00:03<00:07,  2.18it/s] 33%|███▎      | 8/24 [00:03<00:06,  2.32it/s] 38%|███▊      | 9/24 [00:04<00:06,  2.36it/s] 42%|████▏     | 10/24 [00:04<00:06,  2.33it/s] 46%|████▌     | 11/24 [00:04<00:05,  2.36it/s] 50%|█████     | 12/24 [00:05<00:04,  2.42it/s] 54%|█████▍    | 13/24 [00:05<00:04,  2.34it/s] 58%|█████▊    | 14/24 [00:06<00:04,  2.23it/s] 62%|██████▎   | 15/24 [00:06<00:04,  2.22it/s] 67%|██████▋   | 16/24 [00:07<00:03,  2.34it/s] 71%|███████   | 17/24 [00:07<00:02,  2.51it/s] 79%|███████▉  | 19/24 [00:07<00:01,  3.91it/s] 83%|████████▎ | 20/24 [00:07<00:01,  3.79it/s] 88%|████████▊ | 21/24 [00:08<00:00,  3.32it/s] 92%|█████████▏| 22/24 [00:08<00:00,  2.89it/s] 96%|█████████▌| 23/24 [00:09<00:00,  2.76it/s]100%|██████████| 24/24 [00:09<00:00,  2.90it/s]100%|██████████| 24/24 [00:09<00:00,  2.51it/s]
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14461 rows, 28510 columns and 71092 nonzeros
+Model fingerprint: 0x33059eb7
+Variable types: 0 continuous, 28510 integer (24 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 1e+06]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8085 rows and 12430 columns
+Presolve time: 0.05s
+Presolved: 6376 rows, 16080 columns, 38897 nonzeros
+Variable types: 0 continuous, 16080 integer (4 binary)
+
+Root relaxation: objective 3.000000e+02, 321 iterations, 0.01 seconds (0.01 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0     300.0000000  300.00000  0.00%     -    0s
+
+Explored 1 nodes (321 simplex iterations) in 0.09 seconds (0.14 work units)
+Thread count was 12 (of 12 available processors)
+
+Solution count 1: 300 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 3.000000000000e+02, best bound 3.000000000000e+02, gap 0.0000%
+Iteration:  9
+Size of network:  2309  nodes,  14231  edges
+Obj Value:  300.0
+New edge added:  None  Edge removed:  None
+Running solver without penalties...
+'''' LOGGING ''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14461 rows, 28510 columns and 71092 nonzeros
+Model fingerprint: 0x3df52988
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8467 rows and 10960 columns
+Presolve time: 0.02s
+Presolved: 5994 rows, 17550 columns, 45133 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.04s
+
+Barrier performed 0 iterations in 0.07 seconds (0.05 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    1052    3.0000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 1052 iterations and 0.07 seconds (0.08 work units)
+Optimal objective  3.000000000e+02
+Iteration:  1
+Size of network:  2309  nodes,  14231  edges
+Obj Value:  300.0
+New edge added:  None  Edge removed:  None
+feasible solution found!
+'''''''''''''''''
+OPTIMAL LP value 300.0
+{'x_load': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'x_ener': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'a': {1: 0.0, 2: 0.0, 3: 0.0, 6: 0.0, 4: 0.0, 12: 0.0, 5: 0.0, 11: 0.0, 9: 0.0, 8: 0.0, 7: 0.0, 18: 0.0, 16: 0.0, 10: 0.0, 15: 0.0, 17: 0.0, 14: 0.0, 13: 0.0, 24: 0.0, 23: 0.0, 19: 0.0, 22: 0.0, 20: 0.0, 21: 0.0}, 'n': {1: 0.0, 2: 0.0, 3: 0.0, 6: 0.0, 4: 0.0, 12: 0.0, 5: 0.0, 11: 0.0, 9: 0.0, 8: 0.0, 7: 0.0, 18: 0.0, 16: 0.0, 10: 0.0, 15: 0.0, 17: 0.0, 14: 0.0, 13: 0.0, 24: 0.0, 23: 0.0, 19: 0.0, 22: 0.0, 20: 0.0, 21: 0.0}}
+'''' LOGGING ''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14461 rows, 28510 columns and 71092 nonzeros
+Model fingerprint: 0x3df52988
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8467 rows and 10960 columns
+Presolve time: 0.02s
+Presolved: 5994 rows, 17550 columns, 45133 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.03s
+
+Barrier performed 0 iterations in 0.05 seconds (0.05 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    1052    3.0000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 1052 iterations and 0.05 seconds (0.08 work units)
+Optimal objective  3.000000000e+02
+Iteration:  1
+Size of network:  2309  nodes,  14231  edges
+Obj Value:  300.0
+New edge added:  None  Edge removed:  None
+Running solver without penalties...
+'''' LOGGING ''''
+Gurobi Optimizer version 11.0.3 build v11.0.3rc0 (linux64 - "Ubuntu 24.04.3 LTS")
+
+CPU model: 13th Gen Intel(R) Core(TM) i7-1365U, instruction set [SSE2|AVX|AVX2]
+Thread count: 12 physical cores, 12 logical processors, using up to 12 threads
+
+Optimize a model with 14461 rows, 28510 columns and 71092 nonzeros
+Model fingerprint: 0x3df52988
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+01]
+  Objective range  [1e+00, 3e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+01, 1e+01]
+Presolve removed 8467 rows and 10960 columns
+Presolve time: 0.02s
+Presolved: 5994 rows, 17550 columns, 45133 nonzeros
+
+Concurrent LP optimizer: primal simplex, dual simplex, and barrier
+Showing barrier log only...
+
+Ordering time: 0.04s
+
+Barrier performed 0 iterations in 0.06 seconds (0.05 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+
+Solved with dual simplex
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+    1052    3.0000000e+02   0.000000e+00   0.000000e+00      0s
+
+Solved in 1052 iterations and 0.07 seconds (0.08 work units)
+Optimal objective  3.000000000e+02
+Iteration:  1
+Size of network:  2309  nodes,  14231  edges
+Obj Value:  300.0
+New edge added:  None  Edge removed:  None
+feasible solution found!
+'''''''''''''''''
+({'x_load': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'x_ener': {((1, 10, 0), (3, 8, 4)): 10.0, ((3, 8, 4), (12, 6, 8)): 10.0, ((12, 6, 8), (13, 5, 11)): 10.0, ((13, 5, 11), (24, 3, 15)): 10.0, ((24, 3, 15), (24, 3, 99)): 10.0}, 'a': {1: 0.0, 2: 0.0, 3: 0.0, 6: 0.0, 4: 0.0, 12: 0.0, 5: 0.0, 11: 0.0, 9: 0.0, 8: 0.0, 7: 0.0, 18: 0.0, 16: 0.0, 10: 0.0, 15: 0.0, 17: 0.0, 14: 0.0, 13: 0.0, 24: 0.0, 23: 0.0, 19: 0.0, 22: 0.0, 20: 0.0, 21: 0.0}, 'n': {1: 0.0, 2: 0.0, 3: 0.0, 6: 0.0, 4: 0.0, 12: 0.0, 5: 0.0, 11: 0.0, 9: 0.0, 8: 0.0, 7: 0.0, 18: 0.0, 16: 0.0, 10: 0.0, 15: 0.0, 17: 0.0, 14: 0.0, 13: 0.0, 24: 0.0, 23: 0.0, 19: 0.0, 22: 0.0, 20: 0.0, 21: 0.0}}, 300.0)
