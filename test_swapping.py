@@ -48,7 +48,7 @@ class TestSwap(unittest.TestCase):
 
     def test_ddd_swap_solution(self):
         """Test that DDD produces correct solution with tractor swap."""
-        inst = Instance(self.N, self.parameters, 'default')
+        inst = Instance(self.N, self.parameters, ['default'])
 
         result, val, solve_prop = inst.run_DDD()
 
@@ -69,6 +69,14 @@ class TestSwap(unittest.TestCase):
         print("Result:", result)
         print("Solve properties:", solve_prop)
         print(expected_x_ener)
+        e_check = ((2, 5, 2, 2), (3, 0, 3, 0), 0)
+        print(f"\nEdge type of {e_check}: {inst.Ntl.edge_types.get(e_check, 'not found')}")
+        print("\n--- e_load_ener constraint slacks (x_ener - x_load) ---")
+        for e in inst.Ntl.Ntl.edges:
+            if inst.Ntl.edge_types[e] == 'transit_H' and e[1][0] not in inst.param['battery_nodes']:
+                x_e = result['x_ener'].get(e[:2], 0)
+                x_l = result['x_load'].get(e[:2], 0)
+                print(f"  e_load_ener[{e}]: slack={x_e - x_l}  (x_ener={x_e}, x_load={x_l})")
         # self.assertEqual(result['x_load'], expected_x_load)
         # self.assertEqual(result['x_ener'], expected_x_ener)
         self.assertEqual(result['n'][2], 1)

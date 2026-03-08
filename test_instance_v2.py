@@ -156,16 +156,50 @@ def test_ddd_objective_same_for_different_step_sizes():
         'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2}, 1: {'speed': 2, 'minbat': 2, 'maxbat': 8}, 2: {'speed': 1, 'minbat': 8, 'maxbat': 10}}
     }
 
+    def print_solution(inst, soln, val, label):
+        print(f"\n{label}: val={val}")
+        print(f"  x_load: {soln['x_load']}")
+        print(f"  x_ener: {soln['x_ener']}")
+        print(f"  Positive e_load_ener slacks (x_ener - x_load > 0):")
+        for e in inst.Ntl.Ntl.edges:
+            if inst.Ntl.edge_types[e] == 'transit_H' and e[1][0] not in inst.param['battery_nodes']:
+                x_e = soln['x_ener'].get(e[:2], 0)
+                x_l = soln['x_load'].get(e[:2], 0)
+                if x_e - x_l > 0:
+                    print(f"    e_load_ener[{e}]: slack={x_e - x_l}  (x_ener={x_e}, x_load={x_l})")
+
     params1 = {**base_params, 'step_size': 1}
-    inst1 = Instance_v2.Instance(N.copy(), params1)
-    _, val1, solve_prop = inst1.run_DDD()
+    inst1 = Instance_v2.Instance(N.copy(), params1, ['default'])
+    soln1, val1, solve_prop = inst1.run_DDD()
+    print_solution(inst1, soln1, val1, "step_size=1")
 
     params2 = {**base_params, 'step_size': 3}
-    inst2 = Instance_v2.Instance(N.copy(), params2, 'default')
-    _, val2, solve_prop2 = inst2.run_DDD()
+    inst2 = Instance_v2.Instance(N.copy(), params2, ['default'])
+    soln2, val2, solve_prop2 = inst2.run_DDD()
+    print_solution(inst2, soln2, val2, "step_size=3")
 
-    print("Heuristic properties", solve_prop, val1)
-    print("Default properties", solve_prop2, val2)
+    # Check for 1->2->4 paths in step_size=3 network
+    G3 = inst2.Ntl.Ntl
+    sources = [v for v in G3.nodes if v[0] == 1 and v[2] == 0]
+    sinks   = [v for v in G3.nodes if v[0] == 4 and v[2] == T - 1]
+    via_2   = [v for v in G3.nodes if v[0] == 2]
+    print("\n1->2->4 paths in step_size=3 network:")
+    found = False
+    for src in sources:
+        for mid in via_2:
+            for snk in sinks:
+                if nx.has_path(G3, src, mid) and nx.has_path(G3, mid, snk):
+                    path = nx.shortest_path(G3, src, mid) + nx.shortest_path(G3, mid, snk)[1:]
+                    print(f"  {path}")
+                    found = True
+                    break
+            if found:
+                break
+        if found:
+            break
+    if not found:
+        print("  None found")
+
     assert val1 == val2, f"Objective values differ: step_size=1 gave {val1}, step_size=3 gave {val2}"
 
 
@@ -219,7 +253,7 @@ def test_seed_inserts_breakpoints_and_rebuilds():
     x_load = soln['x_load']
 
     # Build a coarse default instance to seed
-    inst_d = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 3}, 'default')
+    inst_d = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 3}, ['default'])
 
     # Record discretization before seeding
     charges_before = {i: list(inst_d.Ntl.charges[i]) for i in N.nodes}

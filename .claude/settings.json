@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git remote set-url origin git@github.com:hpriya-p/EV-DDD.git)",
+      "Bash(git push)",
+      "Read(//home/haripriya/.ssh/**)",
+      "Bash(ssh-keygen -t ed25519 -C \"hpriya-p@github\" -f ~/.ssh/id_ed25519 -N \"\")",
+      "Bash(git filter-repo --version)",
+      "Bash(pip install git-filter-repo -q)",
+      "Bash(pipx install git-filter-repo)",
+      "Bash(sudo apt-get install -y git-filter-repo)",
+      "Bash(git filter-repo --path data/edges.txt --invert-paths --force)",
+      "Bash(git remote add origin git@github.com:hpriya-p/EV-DDD.git)",
+      "Bash(git push -u origin main)",
+      "Bash(git checkout -b simple_update)"
+    ],
+    "additionalDirectories": [
+      "/home/haripriya/Dropbox/Research/PhD/ev_tractor_trailer/code"
+    ]
+  }
+}

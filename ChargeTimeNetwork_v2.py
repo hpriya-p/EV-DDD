@@ -25,12 +25,13 @@ class ChargeTimeNetwork:
         self.edge_charges = dict()
         self.updated_since_refresh = set()
 
-        if self.config == 'default':
+        assert len(set(self.config) & set(['default', 'heuristic'])) == 1, "Config must be either 'default' or 'heuristic'"
+        if 'default' in self.config:
             self.charges = {i: [0] + list(range(1, self.param['L'], self.param['step_size'])) + [self.param['L']] for i in self.N.nodes}
-            self.charges = {i: list(np.unique(self.charges[i])) for i in self.charges.keys()}
+            self.charges = {i: sorted(list(np.unique(self.charges[i]))) for i in self.charges.keys()}
             self.times = {i: [0] + list(range(1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
-            self.times = {i: list(np.unique(self.times[i])) for i in self.times.keys()}
-        elif self.config == 'heuristic':
+            self.times = {i: sorted(list(np.unique(self.times[i]))) for i in self.times.keys()}
+        elif 'heuristic' in self.config:
             thresholds = [self.param['speed_curve'][q]['maxbat'] for q in sorted(self.param['speed_curve'].keys())]
             self.charges = {i : sorted([0] + [L - self.N[i][j]['dH'] for L in thresholds for j in self.N.neighbors(i) if self.N[i][j]['dH'] < L] + thresholds) for i in self.N.nodes}
             self.charges = {i: list(np.unique(self.charges[i])) for i in self.charges.keys()}
@@ -89,6 +90,34 @@ class ChargeTimeNetwork:
                 equal = False
 
         return equal
+
+    def add_outgoing_edges(self,v):
+        i, g, t = v[0], v[1], v[2]
+        if i in self.param['battery_nodes'] or i in self.param['tractor_nodes']:
+            self.__add_swap_edges(i, t)
+        if i in self.param['charge_nodes']:
+            self.__add_charge_edges(i, t)
+            self.__add_piecewise_edges(i, t)
+        self.__add_transit_edges(i, t)
+        self.__add_wait_edges_g(i, g)
+
+    def add_incoming_edges(self,v):
+        i, g, t = v[0], v[1], v[2]
+        if i in self.param['battery_nodes'] and t > self.param['bat_swap_time']:
+            self.__add_swap_edges(i, t)
+        if i in self.param['tractor_nodes'] and t > self.param['tr_swap_time']:
+            self.__add_swap_edges(i, t)
+        if i in self.param['charge_nodes']:
+            # find largest t' < t
+            max_t = max([t2 for t2 in self.times[i] if t2 < t], default=None)
+            if max_t is not None:
+                self.__add_charge_edges(i, max_t)
+                self.__add_piecewise_edges(i, max_t)
+        for j in self.N.neighbors(i):
+            t2 = self.N[j][i]['time']
+            if t - t2 >= 0:
+                self.__add_transit_edges(j, t - t2)
+
 
     def construct(self):
         for i in tqdm(self.N.nodes):
@@ -343,7 +372,7 @@ class ChargeTimeNetwork:
         for g in self.charges[i]:
             q1 = self.get_q(i, g)
             UB = self.param['speed_curve'][q1]['maxbat']
-            if self.config != 'heuristic':
+            if 'heuristic' not in self.config:
                 for g2 in range(g + 1, int(min(UB + 1, g + self.param['charge_rate'][i] * self.param['speed_curve'][q1]['speed'] + 1))):
                     if g2 <= self.param['L'] and t + 1 < self.param['T']:
                         q2 = self.get_q(i, g2)
@@ -373,7 +402,7 @@ class ChargeTimeNetwork:
             return edges
         for g in self.charges[i]:
             q1 = self.get_q(i, g)
-            if self.config != 'heuristic':
+            if 'heuristic' not in self.config:
                 for g2 in self.charges[i]:
                     if g2 <= g:
                         continue
@@ -535,30 +564,49 @@ class ChargeTimeNetwork:
             curr = (j, g2, t2, q2)
 
         if len(P) == 1:
-            new_P.append((curr, (curr[0], curr[1], self.param['T'] - 1, curr[3])))
-            e_types[(curr, (curr[0], curr[1], self.param['T'] - 1, curr[3]))] = 'wait'
+            wait_e = (curr, (curr[0], curr[1], self.param['T'] - 1, curr[3]))
+            new_P.append(wait_e)
+            e_types[wait_e] = 'wait' 
         elif t < self.param['T'] - 1:
-            new_P.append((curr, (j, g2, self.param['T'] - 1, q2)))
-            e_types[(curr, (j, g2, self.param['T'] - 1, q2))] = 'wait'
+            wait_e = (curr, (j, g2, self.param['T'] - 1, q2))
+            new_P.append(wait_e)
+            e_types[wait_e] = 'wait' 
         return new_P, e_types, edge_map, True
  
     def update(self, lst_of_flows):
         """
         Given flow vector, updates network. Returns new edges, new recourse edges, and deleted edges
         recomputes edges at affected nodes
+
+        Two options: 'smart update' tries to update multiple edges that may be affected
+        'simple update' (default) updates only the first edge it finds that is not in the network
         """
         for flow in lst_of_flows:
             for P, val in self.flow_decomposition(flow).items():
                 if val > 0:
-                    new_edge, del_e = self.__update_P(P)
-                    if new_edge is not None:
-                        # update edges incident to the affected nodes
-                        i, j = new_edge[0][0], new_edge[1][0]
-                        affected_edges = [e for e in self.Ntl.edges if e[0][0] == i or e[1][0] == i or e[0][0] == j or e[1][0] == j]
-                        for e in affected_edges:
-                            self.correct_edge(e[0], e[1])
+                    print(P)
+                    v1, v2, e_type, del_e = self.__update_P(P) 
+                    if v1 is None:                            
+                        continue # no new edges need to be added, so we are done with this path
+                    if v2 not in self.Ntl.nodes:
+                        self.add_outgoing_edges(v2) # else we may lose the path
+                    if 'simple_w_incoming_update' in self.config and v1 not in self.Ntl.nodes:
+                        self.add_incoming_edges(v1)
+                    new_e = self.add_single_edge(v1, v2, e_type)
+                    self.correct_edge(del_e[0], del_e[1])
+
+                    if new_e is not None:
+                        # new edge has already been added. We are done if 'simple_update' option is used
+                            
+                        if 'smart_update' in self.config:
+                            # update edges incident to the affected nodes
+                            i, j = new_e[0][0], new_e[1][0]
+                            affected_edges = [e for e in self.Ntl.edges if e[0][0] == i or e[1][0] == i or e[0][0] == j or e[1][0] == j]
+                            for e in affected_edges:
+                                self.correct_edge(e[0], e[1])
+                        
                         self.cleanup()
-                        return new_edge, del_e
+                        return new_e, del_e
         self.cleanup()
         return None, None
 
@@ -593,10 +641,10 @@ class ChargeTimeNetwork:
                     self.times[j].sort()
                     self.updated_since_refresh.add(j)
 
-                new_e = self.add_single_edge(v1, v2, edge_types[e])
-                return new_e, edge_map[e]
+               
+                return v1, v2, edge_types[e], edge_map[e]
 
-        return None, None
+        return None, None, None, None
 
     def cleanup(self):
         # remove all keys that are not edges in Ntl from edge_types, edge_times, edge_dists, edge_charges

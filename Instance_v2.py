@@ -6,7 +6,7 @@ import gurobipy as gp
 PEN_CONST = 10**6
 
 class Instance:
-    def __init__(self, N, parameters, config='heuristic', network_only=False):
+    def __init__(self, N, parameters, config=['heuristic'], network_only=False):
         self.N = N
         self.param = parameters
         self.model = gp.Model() 
@@ -14,25 +14,22 @@ class Instance:
         self.penalties = dict()
         self.config = config 
 
+        # upate config
+        if len(set(self.config) & set(['smart_update', 'simple_update', 'simple_w_incoming_update'])) == 0:
+            self.config = [x for x in self.config] + ['simple_w_incoming_update']
+
         # init charge-time-augmented network
         self.Ntl = ChargeTimeNetwork(N, self.param, config)
         print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
         if not network_only:
             self.construct_model()
 
-    def run_DDD(self, LB=0):
-        LP_soln, LP_val, solve_properties = self.solve(True, penalty=False, LB=LB)
-        print("OPTIMAL IP value", LP_val)
-        return LP_soln, LP_val, solve_properties
-        print(LP_soln)
-        final_soln, final_val, final_solve_prop = self.solve(False)
-        final_solve_prop['LP_obj'] = LP_val
-        final_solve_prop['LP_n_iterations'] = solve_properties['n_iterations']
-        final_solve_prop['total_iterations'] = final_solve_prop['n_iterations'] + solve_properties['n_iterations']
-        return final_soln, final_val, final_solve_prop
-        
-    
 
+
+    """
+    Functions for model construction / update
+    """
+    
     def parse_var_name(self, var_name):
         # Assumes format: x_load[((i, g, t), (j, g2, t2), k)]
         inside = var_name[var_name.find('[')+1:var_name.find(']')]
@@ -48,96 +45,6 @@ class Instance:
                 t2 = tuple(map(int, tuples[1].strip('()').split(',')))
                 k = int(tuples[2].strip('()').split(',')[0])
                 return (t1, t2, k)
-           
-    def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
-        n_iter = 1
-        curr_LB = 0
-        if verbose:
-            print("'''' LOGGING ''''")
-        while n_iter < self.param['MAX_ITER']:
-            if LP_relax:
-                M = self.model.relax()
-            else:
-                M = self.model
-            
-            M.optimize()
-            if M.status != gp.GRB.OPTIMAL or n_iter == self.param['MAX_ITER'] - 1:
-                if verbose: 
-                    print("Infeasible... recomputing full network")
-                    self.Ntl.construct()
-                    self.construct_model(penalty=penalty)
-                    M = self.model.relax() if LP_relax else self.model
-                    M.optimize()
-                   
-                    if M.status != gp.GRB.OPTIMAL:
-                        M.computeIIS()
-                        M.write('my_iis.ilp')
-                        print("Irreducible Inconsistent Subsystem (IIS):")
-                        for c in M.getConstrs():
-                            if c.IISConstr:
-                                print(f"Infeasible constraint: {c.ConstrName}")
-                        raise RuntimeError("Model is infeasible.")
-                if M.status == gp.GRB.OPTIMAL and verbose:
-                    print("Solution found after full network recomputation!")
-            assert M.ObjVal >= LB, "Objective value is above specified lower bound"
-            if verbose:
-                print("Iteration: ", n_iter)
-                print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
-                print("Obj Value: ", M.ObjVal)
-            
-            x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
-            x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
-            a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
-            n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
-            curr_LB = M.ObjVal
-            
-
-            corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
-            new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
-            #self.Ntl.refresh()
-            if verbose:
-                print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
-
-            if removed_edge is not None:
-                assert removed_edge not in self.Ntl.Ntl.edges
-        
-            if penalty:
-                self.penalties[removed_edge] = PEN_CONST
-            else:
-                self.penalties[removed_edge] = 0
-
-            if status and (new_edge is None):
-                if verbose:
-                    print("feasible solution found!")
-                    print("'''''''''''''''''")
-                return {'x_load': corrected_flow[0], 'x_ener': corrected_flow[1], 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
-            else:
-                if penalty and (new_edge is not None):
-                    # applies penalty to all copies of new edge
-                    u, v= new_edge[0][0], new_edge[1][0]
-                    g_delta = new_edge[1][1] - new_edge[0][1]
-                    t_delta = new_edge[1][2] - new_edge[0][2]
-
-                    penalty_edges = [e for e in self.Ntl.Ntl.edges if e[0][0] == u and e[1][0] == v and (e[1][1] - e[0][1] != g_delta or e[1][2] - e[0][2]!= t_delta)]
-                    for e in penalty_edges:
-                        self.penalties[e] = PEN_CONST
-
-                self.update_model(penalty=penalty)
-
-
-            if verbose:
-                print("Solution cannot be extended to a feasible solution, updating network...")
-                print({'x_load': corrected_flow[0], 'x_ener': corrected_flow[1]})
-                for i in a_.keys():
-                    if a_[i] > 0:   
-                        print("a[", i, "] = ", a_[i])
-                for i in n_.keys():
-                    if n_[i] > 0:
-                        print("n[", i, "] = ", n_[i])
-                print("'''''''''''''''''")
-            n_iter += 1
-        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
-
 
     def __get_var_name(self, root, e):
         if len(e) < 3 or e[2] == -1:
@@ -161,7 +68,7 @@ class Instance:
     def __constr_flow_bal_load(self, v):
         if (v[0] != self.param['source'] or v[2] != 0) and (v[0] != self.param['sink'] or v[2] != self.param['T'] - 1):
             self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.multi_in_edges(v)) == gp.quicksum(self.x_load[e] for e in self.multi_out_edges(v)), name='flow_bal_load[' + str(v) + ']')
-           
+
 
     def __constr_flow_bal_ener(self, v):
         if (v[2] != 0) and ( v[2] != self.param['T'] - 1):
@@ -210,41 +117,63 @@ class Instance:
                 self.model.addConstr(self.x_ener[e] >= self.x_load[e], name='e_load_ener[' + str(e) + ']')
         elif self.Ntl.edge_types[e] == 'swap':
             self.model.addConstr(self.x_ener[e] == 0, name='e_swap_x[' + str(e) + ']')
-
+        self.model.update()
 
     def __constr_demand(self):
         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == self.param['source'] and e[0][2] == 0) == self.D,name='demand-1')
         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == self.param['sink'] and e[1][2] == self.param['T'] - 1) == self.D,name='demand-2')
 
-    def diff_models(self, old_model):
-        equal = True 
-        old_vars = set(v.VarName for v in old_model.getVars())
-        new_vars = set(v.VarName for v in self.model.getVars())
-        added_vars = new_vars - old_vars
-        removed_vars = old_vars - new_vars
-        if len(added_vars) > 0:
-            equal = False
-            l = min(len(added_vars), 10)
-            print("New variables added: ", list(added_vars)[:l])
-        if len(removed_vars) > 0:
-            equal = False
-            l = min(len(removed_vars), 10)
-            print("Variables removed: ", list(removed_vars)[:l])
-        if not equal:
-            return False 
+    def construct_model(self, penalty=False):
+        self.model = gp.Model()
+        self.x_load = dict()
+        self.x_ener = dict()
+        self.D = self.model.addVar(lb=0, name='D')
+        if 'D' in self.param.keys():
+            self.model.addConstr(self.D == self.param['D'], name='demand_constr')
+        # create variables
+        for e in self.Ntl.Ntl.edges:
+            self.x_load[e] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e))
+            self.x_ener[e] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e))
 
-        old_constrs = set(c.ConstrName for c in old_model.getConstrs())
-        new_constrs = set(c.ConstrName for c in self.model.getConstrs())
-        added_constrs = new_constrs - old_constrs
-        removed_constrs = old_constrs - new_constrs
-        if len(added_constrs) > 0:
-            equal = False
-            print("New constraints added: ", added_constrs)
-        if len(removed_constrs) > 0:
-            equal = False
-            print("Constraints removed: ", removed_constrs)
+        self.n = dict()
+        self.a= dict()
+        for i in self.N.nodes:
+            self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
+            self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
+        self.model.update()
+        
+        for v in self.Ntl.Ntl.nodes:
+            self.__constr_flow_bal_ener(v)
+            self.__constr_flow_bal_load(v)
+        for i in self.N.nodes:
+            self.__constr_init_cond_x(i)
+            self.__constr_end_cond_x(i)
+            for t in self.Ntl.times[i]:
+                self.__constr_chargecap(i, t)
+        self.model.update()
 
-        return equal
+        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
+        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
+        self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes']) <= self.param['N_chargers'], name='charger_limit')
+        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['charge_nodes']) <= 0, name='charger_limit')
+
+        for e in self.Ntl.Ntl.edges:
+            self.__constr_edge(e)
+            
+        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == self.param['source'] and e[0][2] == 0) == self.D,name='demand-1')
+        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == self.param['sink'] and e[1][2] == self.param['T'] - 1) == self.D,name='demand-2')
+     
+
+        obj_expr = gp.quicksum((self.x_load[e] + self.x_ener[e]) * self.Ntl.edge_times[e] for e in self.x_load.keys()) + gp.quicksum((self.x_ener[e]) * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])] for e in self.Ntl.Ntl.edges if self.Ntl.edge_charges[e] > 0) + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i] for i in self.N.nodes)
+        if penalty:
+            obj_expr += gp.quicksum(self.penalties[e] * (self.x_load[e] + self.x_ener[e]) for e in self.penalties.keys() if (e in self.x_load.keys()) and (e in self.x_ener.keys()) )
+        if 'D' in self.param.keys():
+            self.model.setObjective(obj_expr, gp.GRB.MINIMIZE)
+        else:
+            self.model.setObjective(self.D, gp.GRB.MAXIMIZE)
+        self.model.update()
+
+
     def update_model(self, penalty=False):
         """Incrementally update the Gurobi model to reflect changes in self.Ntl.Ntl.
         Called instead of construct_model on DDD iterations after the first.
@@ -254,10 +183,15 @@ class Instance:
         new_edges     = current_edges - model_edges
         removed_edges = model_edges   - current_edges
 
-        # 1. Disable variables for removed edges (fix bounds to 0)
+        # 1. Disable variables for removed edges (fix bounds to 0) and remove their edge constraints
         for e in removed_edges:
             self.x_load[e].lb = self.x_load[e].ub = 0
             self.x_ener[e].lb = self.x_ener[e].ub = 0
+            for constr_name in [f'e_load_constr[{e}]', f'e_load_ener_bat[{e}]',
+                                f'e_load_ener[{e}]', f'e_swap_x[{e}]']:
+                c = self.model.getConstrByName(constr_name)
+                if c is not None:
+                    self.model.remove(c)
 
         # 2. Add variables for new edges
         for e in new_edges:
@@ -354,56 +288,143 @@ class Instance:
             self.model.setObjective(self.D, gp.GRB.MAXIMIZE)
         self.model.update()
 
-    def construct_model(self, penalty=False):
-        self.model = gp.Model()
-        self.x_load = dict()
-        self.x_ener = dict()
-        self.D = self.model.addVar(lb=0, name='D')
-        if 'D' in self.param.keys():
-            self.model.addConstr(self.D == self.param['D'], name='demand_constr')
-        # create variables
-        for e in self.Ntl.Ntl.edges:
-            self.x_load[e] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e))
-            self.x_ener[e] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e))
+    
 
-        self.n = dict()
-        self.a= dict()
-        for i in self.N.nodes:
-            self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
-            self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
-        self.model.update()
+
+    """
+    Functions for solving the instance
+    
+    """
+
+    def run_DDD(self, LB=0, LP=True):
+        LP_soln, LP_val, solve_properties = self.solve(True, penalty=False, LB=LB)
+        print("OPTIMAL LP value", LP_val)
+        if LP:
+            return LP_soln, LP_val, solve_properties
+        print(LP_soln)
+        final_soln, final_val, final_solve_prop = self.solve(False)
+        final_solve_prop['LP_obj'] = LP_val
+        final_solve_prop['LP_n_iterations'] = solve_properties['n_iterations']
+        final_solve_prop['total_iterations'] = final_solve_prop['n_iterations'] + solve_properties['n_iterations']
+        return final_soln, final_val, final_solve_prop
         
-        for v in self.Ntl.Ntl.nodes:
-            self.__constr_flow_bal_ener(v)
-            self.__constr_flow_bal_load(v)
-        for i in self.N.nodes:
-            self.__constr_init_cond_x(i)
-            self.__constr_end_cond_x(i)
-            for t in self.Ntl.times[i]:
-                self.__constr_chargecap(i, t)
-        self.model.update()
+    
 
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
-        self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes']) <= self.param['N_chargers'], name='charger_limit')
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['charge_nodes']) <= 0, name='charger_limit')
-
-        for e in self.Ntl.Ntl.edges:
-            self.__constr_edge(e)
+    def resolve_infeasibility(self, LP_relax, verbose):
+        if verbose: print("Infeasible... recomputing full network")
+        self.Ntl.construct()
+        self.construct_model()
+        M = self.model.relax() if LP_relax else self.model
+        M.optimize()
+                   
+        if M.status != gp.GRB.OPTIMAL:
+            M.computeIIS()
+            M.write('my_iis.ilp')
+            print("Irreducible Inconsistent Subsystem (IIS):")
+            for c in M.getConstrs():
+                if c.IISConstr:
+                    print(f"Infeasible constraint: {c.ConstrName}")
+            raise RuntimeError("Model is infeasible.")
+        if M.status == gp.GRB.OPTIMAL and verbose:
+            print("Solution found after full network recomputation!")
             
-        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == self.param['source'] and e[0][2] == 0) == self.D,name='demand-1')
-        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == self.param['sink'] and e[1][2] == self.param['T'] - 1) == self.D,name='demand-2')
-     
+    
+           
+    def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
+        n_iter = 1
+        curr_LB = 0
+        if verbose:
+            print("'''' LOGGING ''''")
+        while n_iter < self.param['MAX_ITER']:
+            
+            if LP_relax:
+                M = self.model.relax()
+            else:
+                M = self.model
+            
+            M.optimize()
+            if M.status != gp.GRB.OPTIMAL:
+                self.resolve_infeasibility(LP_relax, verbose)
+                continue 
+            if verbose:
+                print("Iteration: ", n_iter)
+                print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
+                print("Obj Value: ", M.ObjVal)
+            
+            
+            x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
+            x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
+            a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
+            n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
+            curr_LB = M.ObjVal
+            
 
-        obj_expr = gp.quicksum((self.x_load[e] + self.x_ener[e]) * self.Ntl.edge_times[e] for e in self.x_load.keys()) + gp.quicksum((self.x_ener[e]) * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])] for e in self.Ntl.Ntl.edges if self.Ntl.edge_charges[e] > 0) + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i] for i in self.N.nodes)
-        if penalty:
-            obj_expr += gp.quicksum(self.penalties[e] * (self.x_load[e] + self.x_ener[e]) for e in self.penalties.keys() if (e in self.x_load.keys()) and (e in self.x_ener.keys()) )
-        if 'D' in self.param.keys():
-            self.model.setObjective(obj_expr, gp.GRB.MINIMIZE)
-        else:
-            self.model.setObjective(self.D, gp.GRB.MAXIMIZE)
-        self.model.update()
+            corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
+            new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
 
+            if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
+        
+            if penalty:
+                self.penalties[removed_edge] = PEN_CONST
+            else:
+                self.penalties[removed_edge] = 0
+
+            if status and (new_edge is None):
+                if verbose:
+                    print("feasible solution found!")
+                    print("'''''''''''''''''")
+                return {'x_load': corrected_flow[0], 'x_ener': corrected_flow[1], 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
+            else:
+                self.update_model(penalty=penalty)
+
+
+            if verbose:
+                print("Solution cannot be extended to a feasible solution, updating network...")
+                print({'x_load': corrected_flow[0], 'x_ener': corrected_flow[1]})
+                for i in a_.keys():
+                    if a_[i] > 0:   
+                        print("a[", i, "] = ", a_[i])
+                for i in n_.keys():
+                    if n_[i] > 0:
+                        print("n[", i, "] = ", n_[i])
+                print("'''''''''''''''''")
+                n_iter += 1
+        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
+
+
+    """
+    Functions for testing and debugging
+    """
+    def diff_models(self, old_model):
+        equal = True 
+        old_vars = set(v.VarName for v in old_model.getVars())
+        new_vars = set(v.VarName for v in self.model.getVars())
+        added_vars = new_vars - old_vars
+        removed_vars = old_vars - new_vars
+        if len(added_vars) > 0:
+            equal = False
+            l = min(len(added_vars), 10)
+            print("New variables added: ", list(added_vars)[:l])
+        if len(removed_vars) > 0:
+            equal = False
+            l = min(len(removed_vars), 10)
+            print("Variables removed: ", list(removed_vars)[:l])
+        if not equal:
+            return False 
+
+        old_constrs = set(c.ConstrName for c in old_model.getConstrs())
+        new_constrs = set(c.ConstrName for c in self.model.getConstrs())
+        added_constrs = new_constrs - old_constrs
+        removed_constrs = old_constrs - new_constrs
+        if len(added_constrs) > 0:
+            equal = False
+            print("New constraints added: ", added_constrs)
+        if len(removed_constrs) > 0:
+            equal = False
+            print("Constraints removed: ", removed_constrs)
+
+        return equal
+    
     def seed(self, x_load):
         """
         Pre-populate self.Ntl.times and self.Ntl.charges from a prior solution's

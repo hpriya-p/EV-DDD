@@ -28,7 +28,7 @@ class TestChargeTimeNetwork(unittest.TestCase):
             'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2}, 1: {'speed': 2, 'minbat': 2, 'maxbat': 4}, 2: {'speed': 1, 'minbat': 4, 'maxbat': 5}},
             'step_size': 2,
         }
-        self.config = 'default'
+        self.config = ['default']
 
     def test_init(self):
         """Test ChargeTimeNetwork initialization."""
@@ -174,7 +174,7 @@ class TestOverestimateUnderestimate(unittest.TestCase):
             'step_size': 2,
         }
 
-        self.ctn = ChargeTimeNetwork(self.N, self.parameters, 'default')
+        self.ctn = ChargeTimeNetwork(self.N, self.parameters, ['default'])
 
     def test_overestimate_exact_match(self):
         """Test overestimate when value exists in list."""
@@ -247,7 +247,7 @@ class TestFlowDecomposition(unittest.TestCase):
             'step_size': 2,
         }
 
-        self.ctn = ChargeTimeNetwork(self.N, self.parameters, 'default')
+        self.ctn = ChargeTimeNetwork(self.N, self.parameters, ['default'])
 
     def test_flow_decomposition_empty_flow(self):
         """Test flow decomposition with empty flow."""
@@ -301,7 +301,7 @@ class TestAddSingleEdge(unittest.TestCase):
             'step_size': 2,
         }
 
-        self.ctn = ChargeTimeNetwork(self.N, self.parameters, 'default')
+        self.ctn = ChargeTimeNetwork(self.N, self.parameters, ['default'])
 
     def test_add_transit_edge(self):
         """Test adding a transit edge."""
@@ -396,7 +396,7 @@ class TestDiff(unittest.TestCase):
         }
         if params_override:
             params.update(params_override)
-        return ChargeTimeNetwork(graph_override if graph_override is not None else N, params, 'default')
+        return ChargeTimeNetwork(graph_override if graph_override is not None else N, params, ['default'])
 
     def test_diff_equal_networks(self):
         """Two independently constructed networks with identical parameters are equal."""
@@ -502,7 +502,7 @@ class TestEdgeAttributes(unittest.TestCase):
             'step_size': 2,
         }
 
-        self.ctn = ChargeTimeNetwork(self.N, self.parameters, 'default')
+        self.ctn = ChargeTimeNetwork(self.N, self.parameters, ['default'])
 
     def test_all_edges_have_types(self):
         """Test that all edges have types assigned."""

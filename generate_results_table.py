@@ -19,36 +19,45 @@ for path in results_dir.glob("experiment_*-*-tractor.json"):
         elif config == "default":
             default_files[exp_id] = path
 
-all_ids = sorted(heuristic_files.keys() & default_files.keys())
+all_ids = sorted(heuristic_files.keys() | default_files.keys())
 
 rows = []
 for exp_id in all_ids:
     row = {"id": exp_id}
 
+    col_names = {
+        "heuristic": ("Heuristic obj. value", "Network size (heuristic)", "# iterations (heuristic)"),
+        "default":   ("Optimal value",         "Network size (exact)",     "# iterations (exact)"),
+    }
     for config, files in [("heuristic", heuristic_files), ("default", default_files)]:
+        cost_col, size_col, iter_col = col_names[config]
         if exp_id in files:
             with open(files[exp_id]) as f:
                 data = json.load(f)
-            row[f"{config} cost"] = data.get("objective")
+            row[cost_col] = data.get("objective")
             size = data.get("properties", {}).get("size_of_graph")
-            row[f"{config} size"] = tuple(size) if size is not None else None
-            row[f"{config} iter"] = data.get("properties", {}).get("n_iterations")
+            row[size_col] = tuple(size) if size is not None else None
+            row[iter_col] = data.get("properties", {}).get("n_iterations")
         else:
-            row[f"{config} cost"] = None
-            row[f"{config} size"] = None
-            row[f"{config} iter"] = None
+            row[cost_col] = None
+            row[size_col] = None
+            row[iter_col] = None
     rows.append(row)
 
 df = pd.DataFrame(rows, columns=[
     "id",
-    "heuristic cost",
-    "default cost",
-    "heuristic size",
-    "default size",
-    "heuristic iter",
-    "default iter",
+    "Heuristic obj. value",
+    "Optimal value",
+    "Network size (heuristic)",
+    "Network size (exact)",
+    "# iterations (heuristic)",
+    "# iterations (exact)",
 ])
+df = df.sort_values("Heuristic obj. value").reset_index(drop=True)
 
-print(df.to_string(index=False))
+print(df.to_string(index=False, na_rep="---"))
 df.to_csv("results/results_table.csv", index=False)
 print("\nSaved to results/results_table.csv")
+
+print("\n--- LaTeX ---")
+print(df.to_latex(index=False, na_rep="---"))
