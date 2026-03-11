@@ -1,9 +1,190 @@
+import os
 import networkx as nx
 import numpy as np
 from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 
 from tqdm import tqdm
+
+
+# ---------------------------------------------------------------------------
+# Module-level globals and helpers for parallel construct()
+# ---------------------------------------------------------------------------
+
+_worker_charges = None
+_worker_times = None
+_worker_param = None
+_worker_config = None
+
+
+def _init_ctn_worker(charges, times, param, config):
+    """Initializer for process-pool workers: stores shared read-only data."""
+    global _worker_charges, _worker_times, _worker_param, _worker_config
+    _worker_charges = charges
+    _worker_times = times
+    _worker_param = param
+    _worker_config = config
+
+
+def _get_q_w(g):
+    speed_curve = _worker_param['speed_curve']
+    for q in sorted(speed_curve.keys()):
+        if g < speed_curve[q]['maxbat']:
+            return q
+    return max(speed_curve.keys())
+
+
+def _overestimate_w(lst, val, max_val):
+    if val in lst:
+        return val
+    lo, hi, res = 0, len(lst) - 1, max_val
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if lst[mid] >= val:
+            res = lst[mid]; hi = mid - 1
+        else:
+            lo = mid + 1
+    return res
+
+
+def _underestimate_w(lst, val):
+    if val in lst:
+        return val
+    lo, hi, res = 0, len(lst) - 1, None
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if lst[mid] <= val:
+            res = lst[mid]; lo = mid + 1
+        else:
+            hi = mid - 1
+    return res
+
+
+def _compute_node_edges(task):
+    """
+    Worker: compute all edges originating at node i during construct().
+
+    Returns list of (v1, v2, e_type, edge_charge, edge_time, edge_dist).
+    Deduplicates (v1, v2, e_type) within the node so the main thread can
+    insert blindly without the dedup check from add_single_edge.
+    """
+    i, times_i, charges_i, neighbors = task
+    # neighbors: list of (j, dH, dL, travel_time)
+
+    charges     = _worker_charges
+    times       = _worker_times
+    param       = _worker_param
+    config      = _worker_config
+
+    T, L        = param['T'], param['L']
+    speed_curve = param['speed_curve']
+    seen        = set()
+    results     = []
+
+    def emit(v1, j, g2_raw, t2_raw, e_type):
+        g2 = _overestimate_w(charges[j], g2_raw, L)
+        t2 = (T - 1) if t2_raw >= T else _underestimate_w(times[j], t2_raw)
+        q2 = _get_q_w(g2)
+        v2  = (j, g2, t2, q2)
+        key = (v1, v2, e_type)
+        if key in seen:
+            return
+        seen.add(key)
+        _, g1, t1, _ = v1
+        if e_type in ('transit_H', 'transit_L'):
+            ec, et, ed = 0, t2_raw - t1, g1 - g2_raw
+        elif e_type == 'wait':
+            et = (t2_raw - t1) if t2_raw != T - 1 else 0
+            ec, ed = 0, 0
+        else:  # charge, swap, piecewise
+            ec, et, ed = g2_raw - g1, t2_raw - t1, 0
+        results.append((v1, v2, e_type, ec, et, ed))
+
+    for t in times_i:
+        if t == T - 1:
+            continue
+
+        # ---- swap edges (mirrors __add_swap_edges) ----
+        if i in param['battery_nodes'] or i in param['tractor_nodes']:
+            if t + param['bat_swap_time'] < T:
+                if 'heuristic' not in config:
+                    stop_g = False
+                    for g in charges_i:
+                        if stop_g:
+                            break
+                        q1 = _get_q_w(g)
+                        v1 = (i, g, t, q1)
+                        for g2 in charges_i:
+                            if g2 <= g:
+                                continue
+                            if i in param['battery_nodes'] and t + param['bat_swap_time'] < T:
+                                emit(v1, i, g2, t + param['bat_swap_time'], 'swap')
+                            elif i in param['tractor_nodes'] and t + param['tr_swap_time'] < T:
+                                emit(v1, i, g2, t + param['tr_swap_time'], 'swap')
+                            else:
+                                stop_g = True
+                                break
+                else:
+                    thresholds = [speed_curve[q]['maxbat'] for q in sorted(speed_curve.keys())]
+                    for g in charges_i:
+                        q1 = _get_q_w(g)
+                        v1 = (i, g, t, q1)
+                        if i in param['battery_nodes']:
+                            for g2 in thresholds:
+                                if g2 > g and t + param['bat_swap_time'] < T:
+                                    emit(v1, i, g2, t + param['bat_swap_time'], 'swap')
+                        else:  # tractor node
+                            for g2 in charges_i:
+                                if g2 > g and t + param['tr_swap_time'] < T:
+                                    emit(v1, i, g2, t + int(param['tr_swap_time']), 'swap')
+
+        # ---- charge + piecewise edges (mirrors __add_charge_edges / __add_piecewise_edges) ----
+        if i in param['charge_nodes']:
+            for g in charges_i:
+                q1 = _get_q_w(g)
+                v1 = (i, g, t, q1)
+                UB = speed_curve[q1]['maxbat']
+                if 'heuristic' not in config:
+                    for g2 in range(g + 1, int(min(UB + 1, g + param['charge_rate'][i] * speed_curve[q1]['speed'] + 1))):
+                        if g2 <= L and t + 1 < T:
+                            emit(v1, i, g2, t + 1, 'charge')
+                else:
+                    nb_dH = [dH for _, dH, _, _ in neighbors]
+                    for g2 in charges_i + nb_dH:
+                        if g2 <= g or g2 > UB:
+                            continue
+                        t2 = int(np.ceil((g2 - g) / param['charge_rate'][i] * speed_curve[q1]['speed']))
+                        if t + t2 < T:
+                            emit(v1, i, g2, t + t2, 'charge')
+
+            for q in sorted(speed_curve.keys()):
+                g = speed_curve[q]['maxbat']
+                if g < L:
+                    emit((i, g, t, q), i, g, t, 'piecewise')
+
+        # ---- transit edges (mirrors __add_transit_edges with time=True) ----
+        for g in charges_i:
+            q1 = _get_q_w(g)
+            v1 = (i, g, t, q1)
+            for j, dH, dL, travel_time in neighbors:
+                if dH <= g and t + travel_time < T:
+                    emit(v1, j, g - dH, t + travel_time, 'transit_H')
+                if dL <= g and t + travel_time < T:
+                    emit(v1, j, g - dL, t + travel_time, 'transit_L')
+
+    # ---- wait edges (mirrors __add_wait_edges_g) ----
+    for g in charges_i:
+        q = _get_q_w(g)
+        for l in range(len(times_i) - 1):
+            t      = times_i[l]
+            t_next = times_i[l + 1]
+            v1     = (i, g, t, q)
+            emit(v1, i, g, t_next, 'wait')
+            if t_next < T - 1:
+                emit(v1, i, g, T - 1, 'wait')
+
+    return results
 
 
 class RangeConstrViolation(Exception):
@@ -120,18 +301,53 @@ class ChargeTimeNetwork:
 
 
     def construct(self):
-        for i in tqdm(self.N.nodes):
-            for t in self.times[i]:
-                if t == self.param['T'] - 1:
-                    continue
-                if i in self.param['battery_nodes'] or i in self.param['tractor_nodes']:
-                    self.__add_swap_edges(i, t)
-                if i in self.param['charge_nodes']:
-                    self.__add_charge_edges(i, t)
-                    self.__add_piecewise_edges(i, t)
-                self.__add_transit_edges(i, t)
-            for g in self.charges[i]:
-                self.__add_wait_edges_g(i, g)
+        self.construct_parallel()
+        # for i in tqdm(self.N.nodes):
+        #     for t in self.times[i]:
+        #         if t == self.param['T'] - 1:
+        #             continue
+        #         if i in self.param['battery_nodes'] or i in self.param['tractor_nodes']:
+        #             self.__add_swap_edges(i, t)
+        #         if i in self.param['charge_nodes']:
+        #             self.__add_charge_edges(i, t)
+        #             self.__add_piecewise_edges(i, t)
+        #         self.__add_transit_edges(i, t)
+        #     for g in self.charges[i]:
+        #         self.__add_wait_edges_g(i, g)
+
+    def construct_parallel(self, n_workers=None):
+        if n_workers is None:
+            n_workers = os.cpu_count()
+
+        # Build per-node tasks (neighbor data extracted so the graph need not be pickled).
+        tasks = []
+        for i in self.N.nodes:
+            neighbors = [
+                (j, self.N[i][j]['dH'], self.N[i][j]['dL'], self.N[i][j]['time'])
+                for j in self.N.neighbors(i)
+            ]
+            tasks.append((i, self.times[i], self.charges[i], neighbors))
+
+        # Parallel edge computation: charges/times/param/config sent once via initializer.
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=_init_ctn_worker,
+            initargs=(self.charges, self.times, self.param, self.config),
+        ) as executor:
+            all_results = list(tqdm(
+                executor.map(_compute_node_edges, tasks),
+                total=len(tasks), desc='construct_parallel',
+            ))
+
+        # Serial insertion into the shared graph (networkx is not thread-safe).
+        for node_edges in all_results:
+            for v1, v2, e_type, ec, et, ed in node_edges:
+                key = self.Ntl.add_edge(v1, v2)
+                e = (v1, v2, key)
+                self.edge_types[e]   = e_type
+                self.edge_charges[e] = ec
+                self.edge_times[e]   = et
+                self.edge_dists[e]   = ed
 
     def refresh(self):
         print("Recomputing edges for nodes: ", self.updated_since_refresh)
@@ -549,8 +765,10 @@ class ChargeTimeNetwork:
             j = v2[0]
             g2 = g - self.edge_dists[e] + self.edge_charges[e]
             t2 = min(t + self.edge_times[e], self.param['T'] - 1)
-            q2 = self.get_q(j, g2)  
+            q2 = self.get_q(j, max(g2, 0))  
             if t2 > self.param['T'] - 1 or g2 < 0:
+                break 
+                
                 e2 = (i, g, t, q), (i, g, self.param['T'] - 1, q)
                 new_P.append(e2)
                 e_types[e2] = 'wait'
@@ -567,8 +785,8 @@ class ChargeTimeNetwork:
             wait_e = (curr, (curr[0], curr[1], self.param['T'] - 1, curr[3]))
             new_P.append(wait_e)
             e_types[wait_e] = 'wait' 
-        elif t < self.param['T'] - 1:
-            wait_e = (curr, (j, g2, self.param['T'] - 1, q2))
+        elif t < self.param['T'] - 1: # ended early due to time or charge violation
+            wait_e = (curr, (curr[0], curr[1], self.param['T'] - 1, curr[3]))
             new_P.append(wait_e)
             e_types[wait_e] = 'wait' 
         return new_P, e_types, edge_map, True

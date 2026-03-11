@@ -1,7 +1,8 @@
 from ChargeTimeNetwork_v2 import *
 from copy import deepcopy
 import numpy as np
-import gurobipy as gp 
+import gurobipy as gp
+import time
 
 PEN_CONST = 10**6
 
@@ -117,7 +118,6 @@ class Instance:
                 self.model.addConstr(self.x_ener[e] >= self.x_load[e], name='e_load_ener[' + str(e) + ']')
         elif self.Ntl.edge_types[e] == 'swap':
             self.model.addConstr(self.x_ener[e] == 0, name='e_swap_x[' + str(e) + ']')
-        self.model.update()
 
     def __constr_demand(self):
         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == self.param['source'] and e[0][2] == 0) == self.D,name='demand-1')
@@ -303,8 +303,9 @@ class Instance:
             return LP_soln, LP_val, solve_properties
         print(LP_soln)
         final_soln, final_val, final_solve_prop = self.solve(False)
-        final_solve_prop['LP_obj'] = LP_val
-        final_solve_prop['LP_n_iterations'] = solve_properties['n_iterations']
+        for key, val in solve_properties.items():
+            final_solve_prop[key + '_LP'] = val
+        final_solve_prop['LP_val'] = LP_val
         final_solve_prop['total_iterations'] = final_solve_prop['n_iterations'] + solve_properties['n_iterations']
         return final_soln, final_val, final_solve_prop
         
@@ -333,63 +334,90 @@ class Instance:
     def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
         n_iter = 1
         curr_LB = 0
+        iter_times = []
+        iter_graph_sizes = []
         if verbose:
             print("'''' LOGGING ''''")
         while n_iter < self.param['MAX_ITER']:
-            
-            if LP_relax:
-                M = self.model.relax()
-            else:
-                M = self.model
-            
-            M.optimize()
-            if M.status != gp.GRB.OPTIMAL:
-                self.resolve_infeasibility(LP_relax, verbose)
-                continue 
-            if verbose:
-                print("Iteration: ", n_iter)
-                print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
-                print("Obj Value: ", M.ObjVal)
-            
-            
-            x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
-            x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
-            a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
-            n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
-            curr_LB = M.ObjVal
-            
-
-            corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
-            new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
-
-            if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
-        
-            if penalty:
-                self.penalties[removed_edge] = PEN_CONST
-            else:
-                self.penalties[removed_edge] = 0
-
-            if status and (new_edge is None):
+            try:
+                iter_start = time.time()
+                
+                if LP_relax:
+                    M = self.model.relax()
+                else:
+                    M = self.model
+                
+                M.optimize()
+                
+                if M.status != gp.GRB.OPTIMAL:
+                    #if n_iter == 1: raise RuntimeError("Model is infeasible.")
+                    self.resolve_infeasibility(LP_relax, verbose)
+                    continue 
                 if verbose:
-                    print("feasible solution found!")
+                    print("Iteration: ", n_iter)
+                    print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
+                    print("Obj Value: ", M.ObjVal)
+                
+                
+                x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
+                x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
+                a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
+                n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
+                curr_LB = M.ObjVal
+                
+                assert curr_LB >= LB, "objective value too small"
+                corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
+                new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
+
+                if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
+
+                iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
+
+                if penalty:
+                    self.penalties[removed_edge] = PEN_CONST
+                else:
+                    self.penalties[removed_edge] = 0
+
+                if status and (new_edge is None):
+                    self.Ntl.construct()
+                    self.construct_model()
+                    model = self.model.relax() if LP_relax else self.model
+                    try:
+                        model.optimize()
+                    except KeyboardInterrupt:
+                        break
+                    if model.ObjVal != curr_LB:
+                        print("Network was not fully computed, and has been reconstructed")
+                        continue 
+                    if verbose:
+                        print("feasible solution found!")
+                        print("'''''''''''''''''")
+                    avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
+                    avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+                    avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+                    return {'x_load': corrected_flow[0], 'x_ener': corrected_flow[1], 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+                else:
+                    self.update_model(penalty=penalty)
+
+
+                if verbose:
+                    print("Solution cannot be extended to a feasible solution, updating network...")
+                    print({'x_load': corrected_flow[0], 'x_ener': corrected_flow[1]})
+                    for i in a_.keys():
+                        if a_[i] > 0:   
+                            print("a[", i, "] = ", a_[i])
+                    for i in n_.keys():
+                        if n_[i] > 0:
+                            print("n[", i, "] = ", n_[i])
                     print("'''''''''''''''''")
-                return {'x_load': corrected_flow[0], 'x_ener': corrected_flow[1], 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
-            else:
-                self.update_model(penalty=penalty)
-
-
-            if verbose:
-                print("Solution cannot be extended to a feasible solution, updating network...")
-                print({'x_load': corrected_flow[0], 'x_ener': corrected_flow[1]})
-                for i in a_.keys():
-                    if a_[i] > 0:   
-                        print("a[", i, "] = ", a_[i])
-                for i in n_.keys():
-                    if n_[i] > 0:
-                        print("n[", i, "] = ", n_[i])
-                print("'''''''''''''''''")
                 n_iter += 1
-        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True, 'size_of_graph': ( len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges))}
+                iter_times.append(time.time() - iter_start)
+            except KeyboardInterrupt:
+                break
+        avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
+        avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+        avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
 
 
     """

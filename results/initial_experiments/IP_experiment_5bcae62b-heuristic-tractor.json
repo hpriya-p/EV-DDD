@@ -1,0 +1,41 @@
+{
+  "id": "5bcae62b",
+  "config": [
+    "heuristic",
+    "simple_w_incoming_update"
+  ],
+  "n": 10,
+  "objective": 0,
+  "properties": {
+    "n_iterations": 1,
+    "timeout": true,
+    "size_of_graph": [
+      448,
+      3436
+    ],
+    "avg_time_per_iter": 0,
+    "avg_graph_size_per_iter": [
+      0,
+      0
+    ],
+    "n_iterations_LP": 1,
+    "timeout_LP": true,
+    "size_of_graph_LP": [
+      448,
+      3436
+    ],
+    "avg_time_per_iter_LP": 0,
+    "avg_graph_size_per_iter_LP": [
+      0,
+      0
+    ],
+    "LP_val": 0,
+    "total_iterations": 2
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}

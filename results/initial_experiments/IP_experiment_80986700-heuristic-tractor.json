@@ -1,0 +1,40 @@
+{
+  "id": "80986700",
+  "config": [
+    "heuristic",
+    "simple_w_incoming_update"
+  ],
+  "n": 10,
+  "objective": 84.0,
+  "properties": {
+    "n_iterations": 30,
+    "timeout": true,
+    "size_of_graph": [
+      1694,
+      15585
+    ],
+    "avg_time_per_iter": 2.3453151357584985,
+    "avg_graph_size_per_iter": [
+      1494.9666666666667,
+      12585.633333333333
+    ],
+    "n_iterations_LP": 30,
+    "timeout_LP": true,
+    "size_of_graph_LP": [
+      1359,
+      10313
+    ],
+    "avg_time_per_iter_LP": 1.3934258181473305,
+    "avg_graph_size_per_iter_LP": [
+      1233.6896551724137,
+      9581.172413793103
+    ],
+    "total_iterations": 60
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}

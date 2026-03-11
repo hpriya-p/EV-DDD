@@ -1,3 +1,4 @@
+import time
 import pandas as pd
 import networkx as nx
 import ast
@@ -16,16 +17,17 @@ import Instance_v2
 # ============================================================
 
 # add seed
-random_seed = 1234
+random_seed = 123
+
 np.random.seed(random_seed)
 
 PROCESSED_STATIONS_DF = "data/processed/stations_data.csv"
-LB = 31
+LB = 30
 # bounding box
-MAX_LAT = 45
+MAX_LAT = 49
 MIN_LAT = 32
 MAX_LNG = -67
-MIN_LNG = -120
+MIN_LNG = -125
 
 # West Coast bounding box
 WEST_COAST_MIN_LAT = 34
@@ -47,7 +49,7 @@ speed_curve ={0: {'speed': 3600 * 1/(35*3.6), 'minbat': 0, 'maxbat': 10},
 # Other parameters
 BAT_FROM_TIME = 3600 * 1000 * .75 # battery consumption = (3600 * 1000 * .8) * (time in hrs)
 
-DISTANCE_THRESHOLD = 30  # miles
+DISTANCE_THRESHOLD = 0  # miles
 EDGE_THRESHOLD = 300  # miles - max edge length for connectivity
 
 SF_COORDS = (37.7749, -122.4194)
@@ -327,12 +329,16 @@ def run_experiment(n, config, mode='battery'):
     """Run a DDD experiment on a random subgraph of N with n nodes."""
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
-
+    n_charger = 5
+    n_non_charge = n - 5
 
     # 1. Randomly sample n nodes, keep all edges between them
-    sampled_indices = sorted(np.random.choice(list([v for v in N.nodes if N.nodes[v].get('charger_rate', 0) == 0]), size=n - 5, replace=False))
-    sampled_indices += sorted(np.random.choice(list([v for v in N.nodes if N.nodes[v].get('charger_rate', 0) > 0]), size=5, replace=False))
-    print(f"Sampled {n - 5} non-charger nodes + {len(sampled_indices) - n + 5} charger nodes = {len(sampled_indices)} total nodes")
+    non_charger_inds = [v for v in N.nodes if N.nodes[v].get('charger_rate', 0) == 0]
+    charger_inds = [v for v in N.nodes if N.nodes[v].get('charger_rate', 0) > 0]     
+    print(f"{n_charger}/{len(charger_inds)}", f"{n_non_charge}/{len(non_charger_inds)}")
+    sampled_indices = sorted(np.random.choice(charger_inds, size=n_charger, replace=False))
+    sampled_indices += sorted(np.random.choice(non_charger_inds, size=n_non_charge, replace=False))
+    print(f"Sampled {n_non_charge} non-charger nodes + {n_charger} charger nodes = {len(sampled_indices)} total nodes")
 
     subgraph = N.subgraph(sampled_indices).copy()
 
@@ -358,6 +364,8 @@ def run_experiment(n, config, mode='battery'):
         data['dH'] = int(dist/190 * 100)  # convert to percentage of battery range
         data['dL'] = int(dist * DL_FACTOR)
         data['time'] = int(np.ceil(dist / TRUCK_SPEED))
+    
+    # print G edge properties
 
     # 2. Construct parameters
     charge_nodes = [idx_map[i] for i in sampled_indices
@@ -378,13 +386,13 @@ def run_experiment(n, config, mode='battery'):
         battery_nodes = []
         tractor_nodes = non_charge_nodes
         mobile_nodes = []
-    T = 65
+    T = 80
     parameters = {
         'T': T,
         'L': 100,
-        'D': 5,
+        'D': 1,
         'step_size': 5,
-        'MAX_ITER': 30,
+        'MAX_ITER': 70,
         'charge_nodes': charge_nodes,
         'battery_nodes': battery_nodes,
         'tractor_nodes': tractor_nodes,
@@ -408,6 +416,7 @@ def run_experiment(n, config, mode='battery'):
     for e in instance.Ntl.Ntl.edges:
         u, v, __ = e
         instance.Ntl.Ntl.edges[e]['dH'] = instance.Ntl.edge_dists.get(e, 0)
+        instance.Ntl.Ntl.edges[e]['time'] = instance.Ntl.edge_times.get(e, 0)
     src_nodes = [v for v in instance.Ntl.Ntl.nodes() if v[2] == 0]
     dest_nodes = [v for v in instance.Ntl.Ntl.nodes() if v[2] == T - 1]
     longest_path = -1
@@ -421,11 +430,21 @@ def run_experiment(n, config, mode='battery'):
                 t = k
                 longest_path = v
                 print(src, k, v)
-    print("Longest shortest path is from ", s, " to ", t, " with length ", longest_path)
+    print("Longest shortest path is from ", s, " to ", t, " with length ", longest_path, 'and time ', nx.shortest_path_length(instance.Ntl.Ntl, s, t, 'time'))
+    if T < (longest_path/RANGE + 1) * nx.shortest_path_length(instance.Ntl.Ntl, s, t, 'time'):
+        T = np.ceil(longest_path/RANGE + 1 * nx.shortest_path_length(instance.Ntl.Ntl, s, t, 'time'))
+        print(T)
+        parameters['T'] = int(T)
+        instance = Instance_v2.Instance(G, parameters, config, network_only=True)
+
     parameters['source'] =  s[0]
     parameters['sink'] = t[0]
+    _t0 = time.time()
+    instance.Ntl.construct()
     instance.construct_model()
-    soln, val, props = instance.run_DDD(LB=LB)
+    time_taken = time.time() - _t0
+    print("Time taken", time_taken)
+    soln, val, props = instance.run_DDD(LB=LB, LP=False)
 
     # 4. Write results to JSON
     exp_id = str(uuid.uuid4())[:8]
@@ -436,31 +455,35 @@ def run_experiment(n, config, mode='battery'):
 
     result = {
         'id': exp_id,
-        'config': config,
+        'config': instance.config,
         'n': n,
         'objective': val,
+        'initial_construct_time': time_taken,
         'properties': props,
         'solution': {k: serialize_dict(v) for k, v in soln.items()
                      if isinstance(v, dict)},
     }
-    result_file = os.path.join(RESULTS_DIR, f'experiment_{exp_id}-{config}-{mode}.json')
+    result_file = os.path.join(RESULTS_DIR, f'IP_experiment_{exp_id}-{config[0]}-{mode}.json')
     with open(result_file, 'w') as f:
         json.dump(result, f, indent=2)
 
-    if config == 'heuristic':
-        parameters['MAX_ITER'] = 2 * parameters['MAX_ITER']
-        instance = Instance_v2.Instance(G, parameters, 'default')
-        soln, val, props = instance.run_DDD()
+    if 'heuristic' in config:
+        _t0 = time.time()
+        instance = Instance_v2.Instance(G, parameters, ['default'])
+        time_taken = time.time() - _t0
+        print("Time taken", time_taken)
+        soln, val, props = instance.run_DDD(LP=False)
         result = {
             'id': exp_id,
-            'config': config,
+            'config': instance.config,
             'n': n,
+            'initial_construct_time': time_taken,
             'objective': val,
             'properties': props,
             'solution': {k: serialize_dict(v) for k, v in soln.items()
-                        if isinstance(v, dict)},
+                        if isinstance(v, dict)}
         }
-        result_file = os.path.join(RESULTS_DIR, f'experiment_{exp_id}-default-{mode}.json')
+        result_file = os.path.join(RESULTS_DIR, f'IP_experiment_{exp_id}-default-{mode}.json')
         with open(result_file, 'w') as f:
             json.dump(result, f, indent=2)
     # Write node coordinates to shared JSON file
@@ -478,12 +501,13 @@ def run_experiment(n, config, mode='battery'):
     return exp_id
 
 
-
-for i in range(20):
+i = 0
+while i < 5:
     print("Experiment ", i)
     try:
-        run_experiment(10, 'heuristic', 'tractor')
+        run_experiment(10, ['heuristic'], 'tractor')
+        i += 1
     except Exception as e:
         print(f"Experiment failed with error: {e}")
-        
+         
      

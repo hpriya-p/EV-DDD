@@ -1,0 +1,22 @@
+{
+  "id": "8ffc9133",
+  "config": [
+    "heuristic"
+  ],
+  "n": 10,
+  "objective": 429.0,
+  "properties": {
+    "n_iterations": 60,
+    "timeout": true,
+    "size_of_graph": [
+      4344,
+      46839
+    ]
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}

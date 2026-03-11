@@ -1,0 +1,3 @@
+id,Heuristic obj. value,Optimal value,Network size (heuristic),Network size (exact),# iterations (heuristic),# iterations (exact)
+644db51e,23.0,23.0,"(1217, 14105)","(2855, 44194)",7,18.0
+b19d6863,82.5,83.0,"(2436, 25975)","(6922, 95163)",30,60.0

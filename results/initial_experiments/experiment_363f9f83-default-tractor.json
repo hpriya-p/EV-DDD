@@ -1,0 +1,23 @@
+{
+  "id": "363f9f83",
+  "config": [
+    "default",
+    "simple_w_incoming_update"
+  ],
+  "n": 30,
+  "objective": 49.0,
+  "properties": {
+    "n_iterations": 60,
+    "timeout": true,
+    "size_of_graph": [
+      6796,
+      136687
+    ]
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}

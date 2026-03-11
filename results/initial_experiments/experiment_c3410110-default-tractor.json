@@ -1,0 +1,23 @@
+{
+  "id": "c3410110",
+  "config": [
+    "default",
+    "simple_w_incoming_update"
+  ],
+  "n": 30,
+  "objective": 88.0,
+  "properties": {
+    "n_iterations": 60,
+    "timeout": true,
+    "size_of_graph": [
+      5790,
+      127034
+    ]
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}

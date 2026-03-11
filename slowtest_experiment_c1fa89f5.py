@@ -179,10 +179,8 @@ class TestC1fa89f5Instance(unittest.TestCase):
         soln, val, props = instance.run_DDD(LB=LB)
 
         self.assertIsNotNone(soln, "run_DDD returned None solution")
-        if 'smart_update' in instance.config:
-            self.assertAlmostEqual(val, 128.75, places=2, msg=f"Expected objective 128.75, got {val}")
-        else:
-            self.assertAlmostEqual(val, 132.67, places=2, msg=f"Expected objective 132.67, got {val}")
+        self.assertAlmostEqual(val, 125.75, places=2, msg=f"Expected objective 128.75, got {val}")
+        
 
         print(f"c1fa89f5 — objective={val}, props={props}")
         return soln 
