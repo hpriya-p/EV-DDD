@@ -183,8 +183,14 @@ class Instance:
         self.n = dict()
         self.a= dict()
         for i in self.N.nodes:
-            self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
-            self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
+            if i in self.param['tractor_nodes']:
+                self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
+            else:
+                self.n[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
+            if i in self.param['charge_nodes']:
+                self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
+            else:
+                self.a[i] = self.model.addVar(lb=0, ub=0,  vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
         self.model.update()
         
         for v in self.Ntl.Ntl.nodes:
