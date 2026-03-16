@@ -17,12 +17,12 @@ import Instance_v2
 # ============================================================
 
 # add seed
-random_seed = 123
+random_seed = 1
 
 np.random.seed(random_seed)
 
 PROCESSED_STATIONS_DF = "data/processed/stations_data.csv"
-LB = 30
+LB = 20
 # bounding box
 MAX_LAT = 49
 MIN_LAT = 32
@@ -505,7 +505,7 @@ i = 0
 while i < 5:
     print("Experiment ", i)
     try:
-        run_experiment(10, ['heuristic'], 'tractor')
+        run_experiment(25, ['heuristic'], 'tractor')
         i += 1
     except Exception as e:
         print(f"Experiment failed with error: {e}")

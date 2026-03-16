@@ -35,10 +35,10 @@ def _get_q_w(g):
     return max(speed_curve.keys())
 
 
-def _overestimate_w(lst, val, max_val):
+def _overestimate_w(lst, val):
     if val in lst:
         return val
-    lo, hi, res = 0, len(lst) - 1, max_val
+    lo, hi, res = 0, len(lst) - 1, None
     while lo <= hi:
         mid = (lo + hi) // 2
         if lst[mid] >= val:
@@ -83,7 +83,7 @@ def _compute_node_edges(task):
     results     = []
 
     def emit(v1, j, g2_raw, t2_raw, e_type):
-        g2 = _overestimate_w(charges[j], g2_raw, L)
+        g2 = _overestimate_w(charges[j], g2_raw)
         t2 = (T - 1) if t2_raw >= T else _underestimate_w(times[j], t2_raw)
         q2 = _get_q_w(g2)
         v2  = (j, g2, t2, q2)
@@ -196,6 +196,25 @@ class RangeConstrViolation(Exception):
 
 class ChargeTimeNetwork:
     def __init__(self, N, parameters, config):
+        # parameters dict keys:
+        #   L             (int)   – maximum battery level
+        #   T             (int)   – time horizon; time steps run from min_time to T-1
+        #   min_time      (int)   – earliest time step, default 0
+        #   step_size     (int)   – discretisation stride for both charge and time levels
+        #   battery_nodes (list)  – nodes where battery swaps are available
+        #   tractor_nodes (list)  – nodes where tractor swaps are available
+        #   charge_nodes  (list)  – nodes where in-place charging is available
+        #   bat_swap_time (int)   – time units consumed by a battery swap
+        #   tr_swap_time  (int)   – time units consumed by a tractor swap
+        #   charge_rate   (dict)  – {node: rate}; units of charge added per unit time at each charge node
+        #   speed_curve   (dict)  – {q: {'speed': s, 'minbat': lo, 'maxbat': hi}};
+        #                           piecewise-linear speed segments indexed by segment id q
+        #   sources       (list)  – (optional) node IDs at which flow may originate at time min_time;
+        #                           populated/extended in place when bndry_wait_edges is used
+        #   sinks         (list)  – (optional) node IDs at which flow may terminate at time T-1;
+        #                           populated/extended in place when bndry_wait_edges is used
+        #   bndry_wait_edges (list) – (optional) nodes for which dummy source/sink nodes
+        #                             s_i / t_i are created and linked at the time boundary
         self.N = N
         self.Ntl = nx.MultiDiGraph()
         self.param = parameters
@@ -206,17 +225,20 @@ class ChargeTimeNetwork:
         self.edge_charges = dict()
         self.updated_since_refresh = set()
 
+        if 'min_time' not in self.param.keys():
+            self.param['min_time'] = 0
+
         assert len(set(self.config) & set(['default', 'heuristic'])) == 1, "Config must be either 'default' or 'heuristic'"
         if 'default' in self.config:
             self.charges = {i: [0] + list(range(1, self.param['L'], self.param['step_size'])) + [self.param['L']] for i in self.N.nodes}
             self.charges = {i: sorted(list(np.unique(self.charges[i]))) for i in self.charges.keys()}
-            self.times = {i: [0] + list(range(1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
+            self.times = {i: [self.param['min_time']] + list(range(self.param['min_time'] + 1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
             self.times = {i: sorted(list(np.unique(self.times[i]))) for i in self.times.keys()}
         elif 'heuristic' in self.config:
             thresholds = [self.param['speed_curve'][q]['maxbat'] for q in sorted(self.param['speed_curve'].keys())]
             self.charges = {i : sorted([0] + [L - self.N[i][j]['dH'] for L in thresholds for j in self.N.neighbors(i) if self.N[i][j]['dH'] < L] + thresholds) for i in self.N.nodes}
             self.charges = {i: list(np.unique(self.charges[i])) for i in self.charges.keys()}
-            self.times = {i: [0] + list(range(1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
+            self.times = {i: [self.param['min_time']] + list(range(self.param['min_time'] + 1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
             self.times = {i: list(np.unique(self.times[i])) for i in self.times.keys()}
             print(self.charges)
         else:
@@ -296,7 +318,7 @@ class ChargeTimeNetwork:
                 self.__add_piecewise_edges(i, max_t)
         for j in self.N.neighbors(i):
             t2 = self.N[j][i]['time']
-            if t - t2 >= 0:
+            if t - t2 >= self.param['min_time']:
                 self.__add_transit_edges(j, t - t2)
 
 
@@ -314,6 +336,45 @@ class ChargeTimeNetwork:
         #         self.__add_transit_edges(i, t)
         #     for g in self.charges[i]:
         #         self.__add_wait_edges_g(i, g)
+
+        if 'bndry_wait_edges' in self.param.keys():
+            bndry_edges_seen = set()
+            for i in self.param['bndry_wait_edges']:
+                for g in self.charges[i]:
+                    q = self.get_q(i, g)
+                    t0, tT = self.param['min_time'], self.param['T'] - 1
+
+                    # source dummy node -> real node at min_time
+                    src = (f"s_{i}", g, t0, q)
+                    dst = (i, g, t0, q)
+                    for e_type in ('transit_L', 'transit_H'):
+                        if (src, dst, e_type) not in bndry_edges_seen:
+                            bndry_edges_seen.add((src, dst, e_type))
+                            key = self.Ntl.add_edge(src, dst)
+                            e = (src, dst, key)
+                            self.edge_types[e] = e_type
+                            self.edge_times[e] = 0
+                            self.edge_dists[e] = 0
+                            self.edge_charges[e] = 0
+
+                    if f"s_{i}" not in self.param['sources']:
+                        self.param['sources'].append(f"s_{i}")
+
+                    # real node at T-1 -> sink dummy node
+                    src3 = (i, g, tT, q)
+                    snk = (f"t_{i}", g, tT, q)
+                    for e_type in ('transit_L', 'transit_H'):
+                        if (src3, snk, e_type) not in bndry_edges_seen:
+                            bndry_edges_seen.add((src3, snk, e_type))
+                            key = self.Ntl.add_edge(src3, snk)
+                            e = (src3, snk, key)
+                            self.edge_types[e] = e_type
+                            self.edge_times[e] = 0
+                            self.edge_dists[e] = 0
+                            self.edge_charges[e] = 0
+
+                    if f"t_{i}" not in self.param['sinks']:
+                        self.param['sinks'].append(f"t_{i}")
 
     def construct_parallel(self, n_workers=None):
         if n_workers is None:
@@ -684,7 +745,7 @@ class ChargeTimeNetwork:
         def get_path():
             E = [e for e, val in flow.items() if val > 0]
             VE = [e[0] for e in E] + [e[1] for e in E]
-            src_nodes = [v for v in self.Ntl.nodes if v[2] == 0 and v in VE]
+            src_nodes = [v for v in self.Ntl.nodes if v[2] == self.param['min_time'] and v in VE]
             targets = [v for v in self.Ntl.nodes if v[2] == self.param['T'] - 1 and v in VE]
 
             # Build adjacency list
@@ -764,7 +825,7 @@ class ChargeTimeNetwork:
                 break
             j = v2[0]
             g2 = g - self.edge_dists[e] + self.edge_charges[e]
-            t2 = min(t + self.edge_times[e], self.param['T'] - 1)
+            t2 = t + self.edge_times[e]
             q2 = self.get_q(j, max(g2, 0))  
             if t2 > self.param['T'] - 1 or g2 < 0:
                 break 
@@ -850,11 +911,11 @@ class ChargeTimeNetwork:
                     self.charges[j].append(g2)
                     self.charges[j].sort()
                     self.updated_since_refresh.add(j)
-                if t1 not in self.times[i]:
+                if t1 not in self.times[i] and t1 >= self.param['min_time']:
                     self.times[i].append(t1)
                     self.times[i].sort()
                     self.updated_since_refresh.add(i)
-                if t2 not in self.times[j]:
+                if t2 not in self.times[j] and t2 >= self.param['min_time']:
                     self.times[j].append(t2)
                     self.times[j].sort()
                     self.updated_since_refresh.add(j)

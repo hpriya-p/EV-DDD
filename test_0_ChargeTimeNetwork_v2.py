@@ -531,5 +531,251 @@ class TestEdgeAttributes(unittest.TestCase):
             self.assertIn(e_type, valid_types)
 
 
+class TestMinTime(unittest.TestCase):
+    """Test ChargeTimeNetwork construction when min_time is positive."""
+
+    def _make_network(self):
+        N = nx.DiGraph()
+        N.add_edge(1, 2, dH=2, dL=1, time=2)
+        N.add_edge(2, 3, dH=2, dL=1, time=2)
+        N.add_edge(1, 3, dH=3, dL=2, time=3)
+        N.add_edge(3, 4, dH=1, dL=1, time=1)
+        return N
+
+    def _base_params(self):
+        return {
+            'L': 5,
+            'battery_nodes': [2],
+            'tractor_nodes': [],
+            'charge_nodes': [3],
+            'bat_swap_time': 2,
+            'tr_swap_time': 3,
+            'charge_rate': {1: 1, 2: 1, 3: 2, 4: 1},
+            'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2},
+                            1: {'speed': 2, 'minbat': 2, 'maxbat': 4},
+                            2: {'speed': 1, 'minbat': 4, 'maxbat': 5}},
+            'step_size': 2,
+        }
+
+    def test_min_time_same_node_and_edge_count(self):
+        """Ntl1 (min_time=0, T=10) and Ntl2 (min_time=5, T=15) have the same node and edge counts."""
+        N = self._make_network()
+
+        params1 = self._base_params()
+        params1['min_time'] = 0
+        params1['T'] = 10
+        ctn1 = ChargeTimeNetwork(N, params1, ['default'])
+
+        params2 = self._base_params()
+        params2['min_time'] = 5
+        params2['T'] = 15
+        ctn2 = ChargeTimeNetwork(N, params2, ['default'])
+
+        self.assertEqual(len(ctn1.Ntl.nodes), len(ctn2.Ntl.nodes))
+        self.assertEqual(len(ctn1.Ntl.edges), len(ctn2.Ntl.edges))
+
+    def test_min_time_no_node_before_min_time(self):
+        """No node v in Ntl2 (min_time=5) has v[2] < 5."""
+        N = self._make_network()
+
+        params2 = self._base_params()
+        params2['min_time'] = 5
+        params2['T'] = 15
+        ctn2 = ChargeTimeNetwork(N, params2, ['default'])
+
+        for v in ctn2.Ntl.nodes:
+            self.assertGreaterEqual(v[2], 5, f"Node {v} has time {v[2]} < min_time=5")
+
+    def test_min_time_edges_shift_by_5(self):
+        """For every edge in Ntl1, the time-shifted version (t+5) exists in Ntl2."""
+        N = self._make_network()
+
+        params1 = self._base_params()
+        params1['min_time'] = 0
+        params1['T'] = 10
+        ctn1 = ChargeTimeNetwork(N, params1, ['default'])
+
+        params2 = self._base_params()
+        params2['min_time'] = 5
+        params2['T'] = 15
+        ctn2 = ChargeTimeNetwork(N, params2, ['default'])
+
+        ntl2_edges = set((u, v) for u, v, _ in ctn2.Ntl.edges(keys=True))
+
+        for u, v, _ in ctn1.Ntl.edges(keys=True):
+            i,  g,  t,  q  = u
+            j, g2, t2, q2  = v
+            shifted_u = (i,  g,  t  + 5,  q)
+            shifted_v = (j, g2,  t2 + 5, q2)
+            self.assertIn(
+                (shifted_u, shifted_v), ntl2_edges,
+                f"Edge ({shifted_u}, {shifted_v}) not found in Ntl2 (shifted from ({u}, {v}))"
+            )
+
+
+class TestBndryWaitEdges(unittest.TestCase):
+    """Tests for the bndry_wait_edges feature.
+
+    When param['bndry_wait_edges'] = [i, ...], construct() should:
+      - add dummy source node s_i to param['sources']
+      - add dummy sink   node t_i to param['sinks']
+      - for every charge level g in charges[i]:
+          * add an edge (s_i, g, min_time) -> (i, g, min_time, q) of each type
+          * add an edge (i, g, T-1, q)     -> (t_i, g, T-1)       of each type
+      - not add s_i / t_i more than once even when called with overlapping nodes
+    """
+
+    def _make_params(self, bndry_nodes, sources=None, sinks=None):
+        return {
+            'L': 5,
+            'T': 10,
+            'min_time': 0,
+            'battery_nodes': [],
+            'tractor_nodes': [],
+            'charge_nodes': [],
+            'bat_swap_time': 2,
+            'tr_swap_time': 3,
+            'charge_rate': {1: 1, 2: 1, 3: 1},
+            'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2},
+                            1: {'speed': 2, 'minbat': 2, 'maxbat': 4},
+                            2: {'speed': 1, 'minbat': 4, 'maxbat': 5}},
+            'step_size': 2,
+            'sources': list(sources or []),
+            'sinks':   list(sinks   or []),
+            'bndry_wait_edges': bndry_nodes,
+        }
+
+    def _make_network(self):
+        N = nx.DiGraph()
+        N.add_edge(1, 2, dH=2, dL=1, time=2)
+        N.add_edge(2, 3, dH=1, dL=1, time=2)
+        return N
+
+    # ------------------------------------------------------------------
+    # sources / sinks bookkeeping
+    # ------------------------------------------------------------------
+
+    def test_dummy_source_added_to_sources(self):
+        """s_i is appended to param['sources'] for every i in bndry_wait_edges."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        self.assertIn('s_1', params['sources'])
+
+    def test_dummy_sink_added_to_sinks(self):
+        """t_i is appended to param['sinks'] for every i in bndry_wait_edges."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        self.assertIn('t_1', params['sinks'])
+
+    def test_multiple_bndry_nodes_all_registered(self):
+        """s_i and t_i are added for every node in bndry_wait_edges."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1, 2])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        for i in [1, 2]:
+            self.assertIn(f's_{i}', params['sources'])
+            self.assertIn(f't_{i}', params['sinks'])
+
+    def test_no_duplicate_sources_or_sinks(self):
+        """Constructing twice (or with repeated nodes) does not duplicate s_i / t_i."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ChargeTimeNetwork(N, params, ['default'])
+        self.assertEqual(params['sources'].count('s_1'), 1)
+        self.assertEqual(params['sinks'].count('t_1'), 1)
+
+    # ------------------------------------------------------------------
+    # dummy nodes present in Ntl
+    # ------------------------------------------------------------------
+
+    def test_dummy_source_nodes_in_ntl(self):
+        """A node (s_i, g, min_time, q) exists in Ntl for every g in charges[i]."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        t0 = params['min_time']
+        for g in ctn.charges[1]:
+            q = ctn.get_q(1, g)
+            self.assertIn(('s_1', g, t0, q), ctn.Ntl.nodes,
+                          f"Dummy source node ('s_1', {g}, {t0}, {q}) missing from Ntl")
+
+    def test_dummy_sink_nodes_in_ntl(self):
+        """A node (t_i, g, T-1, q) exists in Ntl for every g in charges[i]."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        T = params['T']
+        for g in ctn.charges[1]:
+            q = ctn.get_q(1, g)
+            self.assertIn(('t_1', g, T - 1, q), ctn.Ntl.nodes,
+                          f"Dummy sink node ('t_1', {g}, {T - 1}, {q}) missing from Ntl")
+
+    # ------------------------------------------------------------------
+    # edges between dummy nodes and real nodes
+    # ------------------------------------------------------------------
+
+    def test_source_edges_exist(self):
+        """For every g in charges[i] there is at least one edge from (s_i, g, min_time, q)
+        to the real node (i, g, min_time, q) in Ntl."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        t0 = params['min_time']
+        ntl_edges = set((u, v) for u, v, _ in ctn.Ntl.edges(keys=True))
+        for g in ctn.charges[1]:
+            q = ctn.get_q(1, g)
+            src = ('s_1', g, t0, q)
+            dst = (1, g, t0, q)
+            self.assertIn((src, dst), ntl_edges,
+                          f"Edge {src} -> {dst} missing from Ntl")
+
+    def test_sink_edges_exist(self):
+        """For every g in charges[i] there is at least one edge from the real node
+        (i, g, T-1, q) to (t_i, g, T-1, q) in Ntl."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        T = params['T']
+        ntl_edges = set((u, v) for u, v, _ in ctn.Ntl.edges(keys=True))
+        for g in ctn.charges[1]:
+            q = ctn.get_q(1, g)
+            src = (1, g, T - 1, q)
+            snk = ('t_1', g, T - 1, q)
+            self.assertIn((src, snk), ntl_edges,
+                          f"Edge {src} -> {snk} missing from Ntl")
+
+    def test_source_edge_types(self):
+        """Edges from dummy source nodes are labelled transit_L and transit_H."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        t0 = params['min_time']
+        g0 = ctn.charges[1][0]
+        q0 = ctn.get_q(1, g0)
+        types_seen = set()
+        for e, et in ctn.edge_types.items():
+            if e[0] == ('s_1', g0, t0, q0):
+                types_seen.add(et)
+        self.assertIn('transit_L', types_seen)
+        self.assertIn('transit_H', types_seen)
+
+    def test_sink_edge_types(self):
+        """Edges to dummy sink nodes are labelled transit_L and transit_H."""
+        N = self._make_network()
+        params = self._make_params(bndry_nodes=[1])
+        ctn = ChargeTimeNetwork(N, params, ['default'])
+        T = params['T']
+        g0 = ctn.charges[1][0]
+        q0 = ctn.get_q(1, g0)
+        types_seen = set()
+        for e, et in ctn.edge_types.items():
+            if e[1] == ('t_1', g0, T - 1, q0):
+                types_seen.add(et)
+        self.assertIn('transit_L', types_seen)
+        self.assertIn('transit_H', types_seen)
+
+
 if __name__ == '__main__':
     unittest.main()
