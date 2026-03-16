@@ -110,7 +110,7 @@ def partition_graph(N, k):
 
 
 
-def lagrangian_decomposition(N, K, T_delta, parameters, config=['heuristic']):
+def lagrangian_decomposition(N, K, parameters, config=['heuristic']):
     """
     Create subproblem instances for Lagrangian decomposition.
 
@@ -119,6 +119,8 @@ def lagrangian_decomposition(N, K, T_delta, parameters, config=['heuristic']):
 
         obj += - sum_{e=(u,v): u in N.nodes, v in S}  (lambda1[e]*x_load[e] + lambda2[e]*x_ener[e])
                + sum_{e=(u,v): u in S,       v in N.nodes} (lambda1[e]*x_load[e] + lambda2[e]*x_ener[e])
+
+    Subproblems are only spatial-splits, not time-based 
 
     Parameters
     ----------
@@ -142,14 +144,10 @@ def lagrangian_decomposition(N, K, T_delta, parameters, config=['heuristic']):
     """
     instances = dict()
     cut_count, partition, boundary_edges = partition_graph(N, K)
-    times = list(range(0, parameters['T'], T_delta))
 
     # construct relevant instances 
     for k in range(K):
-        for min_t in times:
             params = {(key, val) for key, val in parameters.items()}
-            params['min_time'] = min_t
-            params['T'] = min(min_t + T_delta, parameters['T'])
             Vk = [i for i in N.nodes if partition[i] == k]
             Nk = N.subgraph(Vk).copy()
 
@@ -162,30 +160,38 @@ def lagrangian_decomposition(N, K, T_delta, parameters, config=['heuristic']):
             params['sources'] += srcs
             params['sinks'] += sinks
 
-    
-            # Upshot of heuristic simplification: time-based boundary edges are waiting edges of the form (i, min_time - 1),(i, min_time) 
-
-            params['bndry_wait_edges'] = Vk
-
-            instances[(k, min_t)] = Instance(Nk, params, config)
+            instances[k] = Instance(Nk, params, config)
          
-    def get_boundary_edges(Ntl, partition_id, min_time):
+    def get_boundary_edges(Ntl, partition_id):
         in_edges += [e for e in Ntl.edges if partition.get(e[0][0], -1) != partition_id]
         out_edges += [e for e in Ntl.edges if partition.get(e[1][0], -1) != partition_id]
         return in_edges, out_edges
   
-
+    
     solutions = dict()
     properties = dict()
     values = dict()
     n_iter = 0
-    lagrangified_edges = dict()
-    for part, inst in instances.items():
-        k, min_t = part
+    boundary_edges = []
+    lambda1 = dict()
+    lambda2 = dict()
+
+    def update_lambda_multiplier(l_dict, e, err):
+        return None 
+
+    for k, inst in instances.items():
         soln, val, prop = inst.run_DDD()
+
+        # update solution and lambda multipliers. Note that the edges are from the 'converted flow', and so are *true* edges 
         if 'x_load' not in solutions.keys():
             solutions['x_load'] = soln['x_load']
         else:
+            for e, v in soln['x_load']:
+                if e in solutions['x_load'].keys():
+                    abs_diff = abs(solutions['x_load'][e] - v)
+                    update_lambda_multiplier(lambda1, e, -1 * abs_diff if partition[e[0][0]] == k else abs_diff)
+                else:
+                    solutions['x_load'][e] = v
             solutions['x_load'].update(soln['x_load'])
 
         if 'x_ener' not in solutions.keys():
@@ -202,32 +208,12 @@ def lagrangian_decomposition(N, K, T_delta, parameters, config=['heuristic']):
             solutions['n'] = soln['n']
         else:
             solutions['n'].update(soln['n'])
+        
+    
+        # need one more check: net flow at each igt boundary node should be equal (and add the igt copy if it is not). 
 
-        properties[(n_iter, k, min_t)] = prop
+        
 
-        bndry = get_boundary_edges(inst.Ntl.Ntl, k, min_t)
-        for e in bndry:
-            if e[0][0] == f"s_{e[1][0]}":
-                i, g, t, q = e[1]
-                v1 = (i, g, t-1, q)
-                v2 = e[1]
-                lagrangified_edges[e] = (v1, v2)
-            elif e[1][0] == f"t_{e[0][0]}":
-                i, g, t, q = e[0]
-                v2 = (i, g, t+1, q)
-                v1 = e[0]
-                lagrangified_edges[e] = (v1, v2)
-            else:
-                u, v = e
-                lagrangified_edges[e] = e
-
-
-    for e, matching_e in lagrangified_edges.items():
-        if len(in_out['in']) == 0 and len(in_out['out']) == 0:
-            continue 
-        assert len(in_out['in']) == 2
-        assert len(in_out['out']) == 2
-        lambda1[e] = lambda1.get(e, 0) + lambda1()
     n_iter += 1
 
 

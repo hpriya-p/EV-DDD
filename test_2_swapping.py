@@ -86,7 +86,7 @@ class TestSwap(unittest.TestCase):
         
         print(result)
         self.assertEqual(result['n'][2], 1)
-        self.assertEqual(val, 7)
+        self.assertEqual(val, 3)
     
 
     def test_ddd_swap_solution_min_time_2(self):
@@ -138,7 +138,7 @@ class TestSwap(unittest.TestCase):
         print(result)
         # same expected checks as the original test
         self.assertGreaterEqual(result['n'][2], 1)
-        self.assertEqual(val, 7)
+        self.assertEqual(val, 3)
 
 
 class TestMultipleSources(unittest.TestCase):

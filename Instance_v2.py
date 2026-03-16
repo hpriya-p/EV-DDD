@@ -42,6 +42,8 @@ class Instance:
         self.VAR_ROOTS = ['x_load', 'x_ener']
         self.penalties = dict()
         self.config = config 
+        if 'value_for_time' not in self.param.keys():
+            self.param['value_for_time'] = 1
 
         if 'min_time' not in self.param.keys():
             self.param['min_time'] = 0
@@ -56,6 +58,7 @@ class Instance:
             self.construct_model()
 
 
+        
 
     """
     Functions for model construction / update
@@ -203,10 +206,13 @@ class Instance:
              
         self.__constr_demand()
 
-
-        obj_expr = gp.quicksum((self.x_load[e] + self.x_ener[e]) * self.Ntl.edge_times[e] for e in self.x_load.keys()) + gp.quicksum((self.x_ener[e]) * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])] for e in self.Ntl.Ntl.edges if self.Ntl.edge_charges[e] > 0) + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i] for i in self.N.nodes)
         if penalty:
-            obj_expr += gp.quicksum(self.penalties[e] * (self.x_load[e] + self.x_ener[e]) for e in self.penalties.keys() if (e in self.x_load.keys()) and (e in self.x_ener.keys()) )
+            raise NotImplementedError
+        self.set_objective()
+        self.model.update()
+
+    def set_objective(self):
+        obj_expr = gp.quicksum((self.x_load[e]) * self.Ntl.edge_times[e] * self.param['value_for_time'] for e in self.x_load.keys() if e in self.Ntl.Ntl.edges) + gp.quicksum((self.x_ener[e]) * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])] for e in self.Ntl.Ntl.edges if self.Ntl.edge_charges[e] > 0) + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i] for i in self.N.nodes)
         
         if 'lagrange_multipliers' in self.param.keys():
             obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['load'].get((e[0], e[1]), 0) * self.x_load[e] for e in self.x_load.keys())
@@ -216,8 +222,6 @@ class Instance:
             self.model.setObjective(obj_expr, gp.GRB.MINIMIZE)
         else:
             self.model.setObjective(sum(self.D[i] for i in self.param['sinks']), gp.GRB.MAXIMIZE)
-        self.model.update()
-
 
     def update_model(self, penalty=False):
         """Incrementally update the Gurobi model to reflect changes in self.Ntl.Ntl.
@@ -305,29 +309,8 @@ class Instance:
             self.__constr_demand()
 
         # 9. Reset objective
-        obj_expr = (
-            gp.quicksum((self.x_load[e] + self.x_ener[e]) * self.Ntl.edge_times[e]
-                        for e in current_edges)
-            + gp.quicksum(self.x_ener[e] * self.Ntl.edge_charges[e]
-                          * self.param['charge_cost'][(e[0][0], e[0][2])]
-                          for e in current_edges if self.Ntl.edge_charges[e] > 0)
-            + gp.quicksum(self.param['stat_cost'][i] * self.a[i]
-                          + self.param['surplus_cost'][i] * self.n[i]
-                          for i in self.N.nodes)
-        )
-        if penalty:
-            obj_expr += gp.quicksum(
-                self.penalties[e] * (self.x_load[e] + self.x_ener[e])
-                for e in self.penalties if e in self.x_load and e in self.x_ener
-            )
-        
-        if 'lagrange_multipliers' in self.param.keys():
-            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['load'].get((e[0], e[1]), 0) * self.x_load[e] for e in self.x_load.keys())
-            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['ener'].get((e[0], e[1]), 0) * self.x_ener[e] for e in self.x_ener.keys())
-        if 'D' in self.param:
-            self.model.setObjective(obj_expr, gp.GRB.MINIMIZE)
-        else:
-            self.model.setObjective(sum(self.D[i] for i in self.D.keys()), gp.GRB.MAXIMIZE)
+        self.set_objective()
+
         self.model.update()
 
     

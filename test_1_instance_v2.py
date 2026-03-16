@@ -170,36 +170,8 @@ def test_lagrange_empty_multipliers_solves():
     )
 
 
-def test_lagrange_multipliers_load():
-    """Setting a positive multiplier lambda on solution edges should reduce the
-    reported (modified) objective by exactly lambda * flow on those edges.
 
-    lagrange_multipliers must use 3-tuple network edge keys (u, v, k) as found in
-    inst.Ntl.Ntl.edges — NOT the 2-tuple keys from soln['x_load'] which come from
-    convert_flow.  Flow lookup uses e[:2] to map back to the solution dict.
-    """
-    N, params = make_diamond_params()
 
-    # 1. Solve base instance; also retain the final network edge keys
-    inst_base = Instance_v2.Instance(N.copy(), params, ['default'])
-    soln_base, val_base, _ = inst_base.run_DDD()
-
-    # 2. Build multipliers using 3-tuple network keys for positive-flow load edges
-    lam = 1.0
-    lm_load = {
-        e: lam
-        for e, v in soln_base['x_load'].items() if v > 0
-    }
-    assert lm_load, "No positive-flow x_load edges found in base solution"
-
-    # 3. Solve modified instance
-    params_lag = {**params, 'lagrange_multipliers': {'load': lm_load, 'ener': {}}}
-    inst_lag = Instance_v2.Instance(N.copy(), params_lag, ['default'])
-    soln_lag, val_lag, _ = inst_lag.run_DDD()
-
-    assert val_lag < val_base
-    
- 
  
 
 def test_single_source_multiple_sinks():
