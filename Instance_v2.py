@@ -10,7 +10,7 @@ import datetime
 PEN_CONST = 10**6
 
 class Instance:
-    def __init__(self, N, parameters, config=['heuristic'], network_only=False):
+    def __init__(self, N, parameters, config=['heuristic'], network_only=False, seed=None):
         # parameters dict keys (includes all ChargeTimeNetwork keys, plus):
         #   L             (int)   – maximum battery level
         #   T             (int)   – time horizon; time steps run from min_time to T-1
@@ -26,7 +26,7 @@ class Instance:
         #                           piecewise-linear speed segments indexed by segment id q
         #   sources       (list)  – node IDs at which trucks originate (flow leaves at time min_time)
         #   sinks         (list)  – node IDs at which trucks terminate (flow arrives at time T-1)
-        #   D             (dict)  – {node: demand}; number of trucks routed through each source/sink node
+        #   D             (dict)  – {node: (supply, demand)}; number of trucks supplied by node and demanded at node. 
         #   N_tractors    (int)   – maximum number of tractors that can be placed at tractor nodes
         #   N_batteries   (int)   – maximum number of batteries that can be placed at battery nodes
         #   N_chargers    (int)   – maximum number of chargers that can be installed at charge nodes
@@ -54,6 +54,8 @@ class Instance:
         # init charge-time-augmented network
         self.Ntl = ChargeTimeNetwork(N, self.param, config)
         print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
+        if seed is not None:
+            self.seed(seed)
         if not network_only:
             self.construct_model()
 
@@ -159,11 +161,20 @@ class Instance:
             self.model.addConstr(self.x_ener[e] == 0, name='e_swap_x[' + str(e) + ']')
 
     def __constr_demand(self):
-        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] in self.param['sources'] and e[0][2] == self.param['min_time']) == sum(self.D[i] for i in self.param['sources']),name='demand-1')
-        self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] in self.param['sinks'] and e[1][2] == self.param['T'] - 1) == sum(self.D[i] for i in self.param['sinks']),name='demand-2')
+        if 'D' in self.param.keys():
+            for k, v in self.param['D'].items():
+                v_src, v_dest = v          
+                self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == k and e[0][2] == self.param['min_time']) <= v_src,name=f"demand_{k}_src")
+                self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == k and e[1][2] == self.param['T'] - 1) >= v_dest,name=f"demand_{k}_dest")
+        else:
+            for i in self.param['sources']:
+                self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == i and e[0][2] == self.param['min_time']) == self.D[i], name=f"demand_{i}_src")
+            for i in self.param['sinks']:
+                self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == i and e[1][2] == self.param['T'] - 1) == self.D[i], name=f"demand_{i}_dest")
 
     def construct_model(self, penalty=False):
         self.model = gp.Model()
+        self.model.setParam('MIPGap', 0.02)
         self.x_load = dict()
         self.x_ener = dict()
         self.D = dict()
@@ -171,10 +182,7 @@ class Instance:
             self.D[i] = self.model.addVar(lb=0, name=f"D[{i}]")
         for i in self.param['sinks']:
             self.D[i] = self.model.addVar(lb=0, name=f"D[{i}]")
-
-        if 'D' in self.param.keys():
-            self.model.addConstr(sum(self.D[i] for i in self.param['sources']) == self.param['D'], name='dem_src')
-            self.model.addConstr(sum(self.D[i] for i in self.param['sinks']) == self.param['D'], name='dem_snk')
+ 
         # create variables
         for e in self.Ntl.Ntl.edges:
             self.x_load[e] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e))
@@ -204,7 +212,7 @@ class Instance:
  
         self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
         self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
-        self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes']) <= self.param['N_chargers'], name='charger_limit')
+        self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes'] if i not in self.param.get('existing_charge_nodes', [])) <= self.param['N_chargers'], name='charger_limit')
         self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['charge_nodes']) <= 0, name='charger_limit')
 
         for e in self.Ntl.Ntl.edges:
@@ -328,16 +336,16 @@ class Instance:
     """
 
     def run_DDD(self, LB=0, LP=True):
-        LP_soln, LP_val, solve_properties = self.solve(True, penalty=False, LB=LB)
-        print("OPTIMAL LP value", LP_val)
-        if LP:
-            return LP_soln, LP_val, solve_properties
-        print(LP_soln)
+        # LP_soln, LP_val, solve_properties = self.solve(True, penalty=False, LB=LB)
+        # print("OPTIMAL LP value", LP_val)
+        # if LP:
+        #     return LP_soln, LP_val, solve_properties
+        # print(LP_soln)
         final_soln, final_val, final_solve_prop = self.solve(False)
-        for key, val in solve_properties.items():
-            final_solve_prop[key + '_LP'] = val
-        final_solve_prop['LP_val'] = LP_val
-        final_solve_prop['total_iterations'] = final_solve_prop['n_iterations'] + solve_properties['n_iterations']
+        # for key, val in solve_properties.items():
+        #     final_solve_prop[key + '_LP'] = val
+        # final_solve_prop['LP_val'] = LP_val
+        #final_solve_prop['total_iterations'] = final_solve_prop['n_iterations'] + solve_properties['n_iterations']
         return final_soln, final_val, final_solve_prop
         
     
@@ -564,7 +572,7 @@ class Instance:
 
         return equal
     
-    def seed(self, x_load):
+    def seed(self, soln):
         """
         Pre-populate self.Ntl.times and self.Ntl.charges from a prior solution's
         x_load flow dict, then completely rebuild the network and Gurobi model.
@@ -580,32 +588,54 @@ class Instance:
             Edge-key -> flow value mapping as returned by run_DDD()[0]['x_load'].
         """
         # 1. Insert breakpoints from the prior solution
-        for e, val in x_load.items():
-            if val <= 0:
-                continue
+        x_load = soln['x_load']
+        x_ener = soln['x_ener']
+        modified = False 
+        for e in x_load.keys():
             (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
             if g1 not in self.Ntl.charges[i]:
                 self.Ntl.charges[i].append(g1)
                 self.Ntl.charges[i].sort()
+                modified = True 
             if t1 not in self.Ntl.times[i]:
                 self.Ntl.times[i].append(t1)
                 self.Ntl.times[i].sort()
+                modified = True 
             if g2 not in self.Ntl.charges[j]:
                 self.Ntl.charges[j].append(g2)
                 self.Ntl.charges[j].sort()
+                modified = True 
             if t2 not in self.Ntl.times[j]:
                 self.Ntl.times[j].append(t2)
                 self.Ntl.times[j].sort()
-
-        # 2. Completely recompute the charge-time network
-        self.Ntl.Ntl.clear()
-        self.Ntl.edge_types   = dict()
-        self.Ntl.edge_times   = dict()
-        self.Ntl.edge_dists   = dict()
-        self.Ntl.edge_charges = dict()
-        self.Ntl.updated_since_refresh = set()
+                modified = True 
+        
+        modified = False 
+        for e in x_ener.keys():
+            (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
+            if g1 not in self.Ntl.charges[i]:
+                self.Ntl.charges[i].append(g1)
+                self.Ntl.charges[i].sort()
+                modified = True 
+            if t1 not in self.Ntl.times[i] and t1 < self.param['T']:
+                self.Ntl.times[i].append(t1)
+                self.Ntl.times[i].sort()
+                modified = True 
+            if g2 not in self.Ntl.charges[j]:
+                self.Ntl.charges[j].append(g2)
+                self.Ntl.charges[j].sort()
+                modified = True 
+            if t2 not in self.Ntl.times[j] and t2 < self.param['T']:
+                self.Ntl.times[j].append(t2)
+                self.Ntl.times[j].sort()
+                modified = True 
+        
+        if modified: 
+            for i in self.N.nodes:
+                print(i)
+                print(self.Ntl.charges[i])
+                print(self.Ntl.times[i])
+            
         self.Ntl.construct()
-
-        # 3. Completely recompute the Gurobi model
         self.construct_model()
 

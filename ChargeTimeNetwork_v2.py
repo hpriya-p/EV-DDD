@@ -377,6 +377,11 @@ class ChargeTimeNetwork:
                         self.param['sinks'].append(f"t_{i}")
 
     def construct_parallel(self, n_workers=None):
+        self.Ntl = nx.MultiDiGraph()
+        self.edge_types = dict()
+        self.edge_charges = dict()
+        self.edge_times = dict()
+        self.edge_dists = dict()
         if n_workers is None:
             n_workers = os.cpu_count()
 
@@ -402,7 +407,7 @@ class ChargeTimeNetwork:
 
         # Serial insertion into the shared graph (networkx is not thread-safe).
         for node_edges in all_results:
-            for v1, v2, e_type, ec, et, ed in node_edges:
+            for v1, v2, e_type, ec, et, ed in node_edges: 
                 key = self.Ntl.add_edge(v1, v2)
                 e = (v1, v2, key)
                 self.edge_types[e]   = e_type

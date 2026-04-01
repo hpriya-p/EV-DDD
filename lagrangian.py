@@ -172,9 +172,9 @@ def lagrangian_decomposition(N, K, parameters, config=['heuristic']):
     properties = dict()
     values = dict()
     n_iter = 0
-    boundary_edges = []
     lambda1 = dict()
     lambda2 = dict()
+    node_traffic_levels = dict()
 
     def update_lambda_multiplier(l_dict, e, err):
         return None 
@@ -208,14 +208,16 @@ def lagrangian_decomposition(N, K, parameters, config=['heuristic']):
             solutions['n'] = soln['n']
         else:
             solutions['n'].update(soln['n'])
+
         
     
         # need one more check: net flow at each igt boundary node should be equal (and add the igt copy if it is not). 
 
         
 
-    n_iter += 1
 
+
+    n_iter += 1
 
 
 

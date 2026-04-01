@@ -25,7 +25,7 @@ class TestSwap(unittest.TestCase):
             'sinks': [3],
             'T': 6,
             'L': 6,
-            'D': 1,
+            'D': {1: (1, 0), 3: (0, 1)},  # demand of 1 from node 1 to node 3
             'charge_rate': {i: 1 for i in self.N.nodes},
             'battery_nodes': [],
             'charge_nodes': [],
@@ -76,7 +76,7 @@ class TestSwap(unittest.TestCase):
         e_check = ((2, 5, 2, 2), (3, 0, 3, 0), 0)
         print(f"\nEdge type of {e_check}: {inst.Ntl.edge_types.get(e_check, 'not found')}")
         print("\n--- e_load_ener constraint slacks (x_ener - x_load) ---")
-        for e in inst.Ntl.Ntl.edges:
+        for e in inst.Ntl.Ntl.edges(keys=True):
             if inst.Ntl.edge_types[e] == 'transit_H' and e[1][0] not in inst.param['battery_nodes']:
                 x_e = result['x_ener'].get(e[:2], 0)
                 x_l = result['x_load'].get(e[:2], 0)
@@ -96,7 +96,7 @@ class TestSwap(unittest.TestCase):
             'sinks': [3],
             'T': 7,
             'L': 6,
-            'D': 1,
+            'D': {1: (1, 0), 3: (0, 1)},  # demand of 1 from node 1 to node 3
             'min_time': 1, 
             'charge_rate': {i: 1 for i in self.N.nodes},
             'battery_nodes': [],
@@ -161,7 +161,7 @@ class TestMultipleSources(unittest.TestCase):
             'sinks': [4],
             'T': T,
             'L': 6,
-            'D': 2,
+            'D': {1: (1, 0), 2: (1, 0), 4: (0, 2)},  # demand of 1 from nodes 1 and 2 to node 4
             'charge_rate': {i: 0 for i in nodes},
             'battery_nodes': [],
             'charge_nodes': [],
@@ -199,8 +199,8 @@ class TestMultipleSources(unittest.TestCase):
             v for (e, v) in result['x_load'].items()
             if e[1][0] in self.parameters['sinks'] and e[1][2] == self.parameters['T'] - 1
         )
-        self.assertAlmostEqual(sink_flow, self.parameters['D'], places=4,
-                               msg=f"Expected {self.parameters['D']} units at sink, got {sink_flow}")
+        self.assertAlmostEqual(sink_flow, self.parameters['D'][4][1], places=4,
+                               msg=f"Expected {self.parameters['D'][4][1]} units at sink, got {sink_flow}")
 
 
 if __name__ == '__main__':

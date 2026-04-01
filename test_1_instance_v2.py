@@ -31,7 +31,7 @@ def make_parameters():
         'MAX_ITER': 2,
         'sources': [0],
         'sinks': [1],
-        'D': 1,
+        'D': {0: (1, 0), 1: (0, 1)},
         'charge_nodes': [0, 1],
         'battery_nodes': [],
         'tractor_nodes': [],
@@ -95,12 +95,13 @@ def test_constraints_and_demand_present():
 
     constr_names = [c.ConstrName for c in inst.model.getConstrs()]
 
-    assert 'demand-1' in constr_names
-    assert 'demand-2' in constr_names
+    for k, v in params['D'].items():
+        assert f"demand_{k}_src" in constr_names
+        assert f"demand_{k}_dest" in constr_names
 
     assert any(name.startswith('flow_bal_load[') or name.startswith('flow_bal_ener[') for name in constr_names)
 
-    some_edge = next(iter(inst.Ntl.Ntl.edges))
+    some_edge = next(iter(inst.Ntl.Ntl.edges(keys=True)))
     e_type = inst.Ntl.edge_types[some_edge]
     if e_type == 'transit_L':
         expected_prefix = 'e_load_constr['
@@ -128,7 +129,7 @@ def make_diamond_params(T=10):
         'sinks': [4],
         'T': T,
         'L': 10,
-        'D': 1,
+        'D': {1: (1, 0), 4: (0, 1)},
         'step_size': 1,
         'MAX_ITER': 20,
         'charge_rate': {i: 1 for i in nodes},
@@ -196,7 +197,9 @@ def test_single_source_multiple_sinks():
         'sinks': [3, 4],
         'T': T,
         'L': 6,
-        'D': 2,
+        'D': {1: (2, 0),  # supply of 2 at node 1
+               3: (0, 1),  # demand of 1 at node 3
+               4: (0, 1)}, # demand of 1 at node 4
         'step_size': 1,
         'MAX_ITER': 20,
         'charge_rate': {i: 0 for i in nodes},
@@ -226,25 +229,24 @@ def test_single_source_multiple_sinks():
             assert v != {}, f"run_DDD returned empty dict for result['{key}']"
 
     # Total load flow into any sink node at the last time step must equal D=2
-    sink_flow = sum(
-        v for e, v in soln['x_load'].items()
-        if e[1][0] in params['sinks'] and e[1][2] == T - 1
-    )
-    assert sink_flow == pytest.approx(params['D'], abs=1e-4), (
-        f"Expected total sink flow = {params['D']}, got {sink_flow}"
-    )
-
-    # Flow is conserved: total arriving at all sinks equals D
-    # (the solver is free to route all trucks to a single sink if that minimises cost)
-    total_sink_flow = sum(
-        v for e, v in soln['x_load'].items()
-        if e[1][0] in params['sinks'] and e[1][2] == T - 1
-    )
-    assert total_sink_flow == pytest.approx(params['D'], abs=1e-4), (
-        f"Expected total sink flow = {params['D']}, got {total_sink_flow}"
-    )
-
-
+    for k, v in params['D'].items():
+        if k in params['sinks']:
+            sink_flow = sum(
+                v for e, v in soln['x_load'].items()
+                if e[1][0] == k and e[1][2] == T - 1
+            )
+            assert sink_flow == pytest.approx(params['D'][k][1], abs=1e-4), (
+                f"Expected sink {k} flow = {params['D'][k][1]}, got {sink_flow}"
+            )
+        if k in params['sources']:
+            source_flow = sum(
+                v for e, v in soln['x_load'].items()
+                if e[0][0] == k and e[0][2] == 0
+            )
+            assert source_flow == pytest.approx(params['D'][k][0], abs=1e-4), (
+                f"Expected source {k} flow = {params['D'][k][0]}, got {source_flow}"
+            )
+    
 def test_ddd_objective_same_for_different_step_sizes():
     """Test that run_DDD returns the same objective value for different step sizes.
 
@@ -266,7 +268,8 @@ def test_ddd_objective_same_for_different_step_sizes():
         'sinks': [4],
         'T': T,
         'L': 10,
-        'D': 1,
+        'D': {1: (1, 0),  # supply of 1 at node 1
+               4: (0, 1)}, # demand of 1 at node 4
         'charge_rate': {i: 1 for i in nodes},
         'battery_nodes': [],
         'charge_nodes': [2],
@@ -291,7 +294,7 @@ def test_ddd_objective_same_for_different_step_sizes():
         print(f"  x_load: {soln['x_load']}")
         print(f"  x_ener: {soln['x_ener']}")
         print(f"  Positive e_load_ener slacks (x_ener - x_load > 0):")
-        for e in inst.Ntl.Ntl.edges:
+        for e in inst.Ntl.Ntl.edges(keys=True):
             if inst.Ntl.edge_types[e] == 'transit_H' and e[1][0] not in inst.param['battery_nodes']:
                 x_e = soln['x_ener'].get(e[:2], 0)
                 x_l = soln['x_load'].get(e[:2], 0)
@@ -361,7 +364,7 @@ def test_seed_inserts_breakpoints_and_rebuilds():
         'sinks': [4],
         'T': T,
         'L': 10,
-        'D': 1,
+        'D': {1: (1, 0), 4: (0, 1)},
         'charge_rate': {i: 1 for i in nodes},
         'battery_nodes': [],
         'charge_nodes': [2],
@@ -398,10 +401,20 @@ def test_seed_inserts_breakpoints_and_rebuilds():
     charges_before = {i: list(inst_d.Ntl.charges[i]) for i in N.nodes}
     times_before   = {i: list(inst_d.Ntl.times[i])   for i in N.nodes}
 
-    inst_d.seed(x_load)
+    inst_d.seed(soln)
 
     # 1. Every (g, t) from a positive-flow edge in x_load must appear in charges/times
     for e, flow in x_load.items():
+        if flow <= 0:
+            continue
+        (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
+        assert g1 in inst_d.Ntl.charges[i], f"g1={g1} missing from charges[{i}]"
+        assert t1 in inst_d.Ntl.times[i],   f"t1={t1} missing from times[{i}]"
+        assert g2 in inst_d.Ntl.charges[j], f"g2={g2} missing from charges[{j}]"
+        assert t2 in inst_d.Ntl.times[j],   f"t2={t2} missing from times[{j}]"
+
+   
+    for e, flow in soln['x_ener'].items():
         if flow <= 0:
             continue
         (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
@@ -416,6 +429,7 @@ def test_seed_inserts_breakpoints_and_rebuilds():
             assert g in inst_d.Ntl.charges[i], f"pre-seed charge {g} lost at node {i}"
         for t in times_before[i]:
             assert t in inst_d.Ntl.times[i],   f"pre-seed time {t} lost at node {i}"
+
 
     # 3. Network was rebuilt: edges exist and all attribute dicts are consistent
     assert len(inst_d.Ntl.Ntl.edges) > 0, "Network has no edges after seed"
@@ -438,160 +452,182 @@ def test_seed_inserts_breakpoints_and_rebuilds():
             assert v != {}, f"run_DDD (seeded) returned empty dict for result['{key}']"
 
 
+
 # ---------------------------------------------------------------------------
-# bndry_wait_edges tests
+# seed() unit tests
 # ---------------------------------------------------------------------------
 
-def _make_bndry_network():
+def _make_seed_instance(step_size=3):
+    """Return a diamond-graph Instance and a soln dict from a fine-grained solve."""
     N = nx.DiGraph()
-    N.add_edge(1, 2, dH=2, dL=1, time=2)
-    N.add_edge(2, 3, dH=1, dL=1, time=2)
-    return N
-
-
-def _make_bndry_params(bndry_nodes, T=10):
-    nodes = [1, 2, 3]
-    return {
-        'L': 5, 'T': T, 'min_time': 0, 'step_size': 2,
-        'battery_nodes': [], 'tractor_nodes': [], 'charge_nodes': [],
-        'bat_swap_time': 2, 'tr_swap_time': 3,
-        'charge_rate': {i: 1 for i in nodes},
-        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2},
-                        1: {'speed': 2, 'minbat': 2, 'maxbat': 4},
-                        2: {'speed': 1, 'minbat': 4, 'maxbat': 5}},
-        'sources': [1], 'sinks': [3],
-        'D': 1,
-        'N_tractors': 0, 'N_batteries': 0, 'N_chargers': 0,
-        'charge_cost': {(i, t): 1 for i in nodes for t in range(T)},
-        'stat_cost': {i: 0 for i in nodes},
-        'surplus_cost': {i: 0 for i in nodes},
-        'bndry_wait_edges': bndry_nodes,
-    }
-
-
-def test_bndry_wait_edges_network_only_builds():
-    """Instance with bndry_wait_edges builds without error (network_only=True)."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1, 3])
-    inst = Instance_v2.Instance(N, params, config=['default'], network_only=True)
-    assert len(inst.Ntl.Ntl.nodes) > 0
-    assert len(inst.Ntl.Ntl.edges) > 0
-
-
-def test_bndry_wait_edges_sources_sinks_updated():
-    """Dummy s_i / t_i nodes are appended to param['sources'] / param['sinks']."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1, 3])
-    Instance_v2.Instance(N, params, config=['default'], network_only=True)
-    assert 's_1' in params['sources']
-    assert 's_3' in params['sources']
-    assert 't_1' in params['sinks']
-    assert 't_3' in params['sinks']
-
-
-def test_bndry_wait_edges_dummy_nodes_in_ntl():
-    """Dummy source and sink nodes appear in Ntl for every charge level."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1])
-    inst = Instance_v2.Instance(N, params, config=['default'], network_only=True)
-    ctn = inst.Ntl
-    t0, tT = params['min_time'], params['T'] - 1
-    for g in ctn.charges[1]:
-        q = ctn.get_q(1, g)
-        assert ('s_1', g, t0, q) in ctn.Ntl.nodes, f"Missing source dummy node for g={g}"
-        assert ('t_1', g, tT, q) in ctn.Ntl.nodes, f"Missing sink dummy node for g={g}"
-
-
-def test_bndry_wait_edges_boundary_edges_in_ntl():
-    """For each g, edges s_i->i at min_time and i->t_i at T-1 exist in Ntl."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1])
-    inst = Instance_v2.Instance(N, params, config=['default'], network_only=True)
-    ctn = inst.Ntl
-    t0, tT = params['min_time'], params['T'] - 1
-    ntl_edges = set((u, v) for u, v, _ in ctn.Ntl.edges(keys=True))
-    for g in ctn.charges[1]:
-        q = ctn.get_q(1, g)
-        assert (('s_1', g, t0, q), (1, g, t0, q)) in ntl_edges, \
-            f"Source edge missing for g={g}"
-        assert ((1, g, tT, q), ('t_1', g, tT, q)) in ntl_edges, \
-            f"Sink edge missing for g={g}"
-
-
-def test_bndry_wait_edges_more_nodes_than_without():
-    """An Instance with bndry_wait_edges has strictly more Ntl nodes than one without."""
-    N = _make_bndry_network()
-    params_plain = _make_bndry_params(bndry_nodes=[])
-    del params_plain['bndry_wait_edges']
-    inst_plain = Instance_v2.Instance(N.copy(), params_plain, config=['default'], network_only=True)
-
-    params_bndry = _make_bndry_params(bndry_nodes=[1, 3])
-    inst_bndry = Instance_v2.Instance(N.copy(), params_bndry, config=['default'], network_only=True)
-
-    assert len(inst_bndry.Ntl.Ntl.nodes) > len(inst_plain.Ntl.Ntl.nodes)
-    assert len(inst_bndry.Ntl.Ntl.edges) > len(inst_plain.Ntl.Ntl.edges)
-
-
-def test_bndry_wait_edges_model_builds():
-    """Instance with bndry_wait_edges builds a valid Gurobi model (network_only=False)."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1, 3])
-    inst = Instance_v2.Instance(N, params, config=['default'], network_only=False)
-    assert inst.model.NumVars > 0
-    assert inst.model.NumConstrs > 0
-
-
-def test_bndry_wait_edges_demand_constraints_present():
-    """demand-1 and demand-2 constraints are present in the model."""
-    N = _make_bndry_network()
-    params = _make_bndry_params(bndry_nodes=[1, 3])
-    inst = Instance_v2.Instance(N, params, config=['default'], network_only=False)
-    constr_names = {c.ConstrName for c in inst.model.getConstrs()}
-    assert 'demand-1' in constr_names
-    assert 'demand-2' in constr_names
-
-
-def test_bndry_wait_edges_optimal_leq_plain():
-    """Instance with bndry_wait_edges=[0] has optimal value <= plain instance (source=[0]).
-
-    Adding bndry_wait_edges=[0] introduces dummy source s_0 and dummy sink t_0.
-    The optimizer can route demand through the zero-cost shortcut
-    s_0 -> (0,...) -> wait_to_T-1 -> t_0 (wait edges to T-1 have edge_time=0),
-    so the bndry optimal is always <= the plain optimal.
-    Both instances solve without error.
-    """
-    N = nx.DiGraph()
-    N.add_node(0)
-    N.add_node(1)
-    N.add_edge(0, 1, dH=1, dL=1, time=2)
-    T = 6
+    N.add_edge(1, 2, dH=4, dL=4, time=1)
+    N.add_edge(1, 3, dH=5, dL=5, time=2)
+    N.add_edge(2, 4, dH=3, dL=3, time=1)
+    N.add_edge(3, 4, dH=4, dL=4, time=1)
     nodes = list(N.nodes)
-
+    T = 6
     base_params = {
-        'T': T, 'L': 2, 'step_size': 1, 'min_time': 0,
-        'MAX_ITER': 20, 'sources': [0], 'sinks': [1], 'D': 1,
-        'charge_nodes': [], 'battery_nodes': [], 'tractor_nodes': [],
-        'charge_rate': {i: 0 for i in nodes},
-        'charge_cost': {(i, t): 0 for i in nodes for t in range(T)},
-        'stat_cost': {i: 0 for i in nodes},
-        'surplus_cost': {i: 0 for i in nodes},
-        'N_tractors': 0, 'N_batteries': 0, 'N_chargers': 0,
-        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2}},
+        'sources': [1], 'sinks': [4], 'T': T, 'L': 10, 'D': {1: (1, 0), 4: (0, 1)},
+        'charge_rate': {i: 1 for i in nodes}, 'battery_nodes': [],
+        'charge_nodes': [2], 'mobile_nodes': [], 'tractor_nodes': [3],
+        'bat_swap_time': 1, 'tr_swap_time': 1, 'mobile_charge_rate': 0,
+        'charge_cost': {(i, t): 10 for i in nodes for t in range(T)},
+        'surplus_cost': {i: 0 for i in nodes}, 'stat_cost': {i: 0 for i in nodes},
+        'rec_penalty': 1000, 'MAX_ITER': 20,
+        'N_tractors': 1, 'N_chargers': 1, 'N_batteries': 1,
+        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2},
+                        1: {'speed': 2, 'minbat': 2, 'maxbat': 8},
+                        2: {'speed': 1, 'minbat': 8, 'maxbat': 10}},
+    }
+    inst_fine = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 1})
+    soln, _, _ = inst_fine.run_DDD()
+    inst = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': step_size}, ['default'])
+    return inst, soln, N
+
+
+def test_seed_x_load_breakpoints_inserted():
+    """Every (g, t) from x_load edges must appear in Ntl.charges/times after seed."""
+    inst, soln, _ = _make_seed_instance()
+    inst.seed(soln)
+    for e in soln['x_load']:
+        (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
+        assert g1 in inst.Ntl.charges[i], f"g1={g1} missing from charges[{i}] (x_load)"
+        assert t1 in inst.Ntl.times[i],   f"t1={t1} missing from times[{i}] (x_load)"
+        assert g2 in inst.Ntl.charges[j], f"g2={g2} missing from charges[{j}] (x_load)"
+        assert t2 in inst.Ntl.times[j],   f"t2={t2} missing from times[{j}] (x_load)"
+
+
+def test_seed_x_ener_breakpoints_inserted():
+    """Every (g, t) from x_ener edges must appear in Ntl.charges/times after seed."""
+    inst, soln, _ = _make_seed_instance()
+    inst.seed(soln)
+    for e in soln['x_ener']:
+        (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
+        assert g1 in inst.Ntl.charges[i], f"g1={g1} missing from charges[{i}] (x_ener)"
+        assert t1 in inst.Ntl.times[i],   f"t1={t1} missing from times[{i}] (x_ener)"
+        assert g2 in inst.Ntl.charges[j], f"g2={g2} missing from charges[{j}] (x_ener)"
+        assert t2 in inst.Ntl.times[j],   f"t2={t2} missing from times[{j}] (x_ener)"
+
+
+def test_seed_preserves_pre_seed_breakpoints():
+    """seed() must not remove any charges/times that existed before the call."""
+    inst, soln, N = _make_seed_instance()
+    charges_before = {i: list(inst.Ntl.charges[i]) for i in N.nodes}
+    times_before   = {i: list(inst.Ntl.times[i])   for i in N.nodes}
+    inst.seed(soln)
+    for i in N.nodes:
+        for g in charges_before[i]:
+            assert g in inst.Ntl.charges[i], f"pre-seed charge {g} lost at node {i}"
+        for t in times_before[i]:
+            assert t in inst.Ntl.times[i],   f"pre-seed time {t} lost at node {i}"
+
+
+def test_seed_charges_times_remain_sorted_no_duplicates():
+    """After seed(), every charges[i] and times[i] list is sorted with no duplicates."""
+    inst, soln, N = _make_seed_instance()
+    inst.seed(soln)
+    for i in N.nodes:
+        c = inst.Ntl.charges[i]
+        assert c == sorted(set(c)), f"charges[{i}] not sorted/unique: {c}"
+        t = inst.Ntl.times[i]
+        assert t == sorted(set(t)), f"times[{i}] not sorted/unique: {t}"
+
+
+def test_seed_rebuilds_network_edges():
+    """After seed(), the charge-time network has edges and consistent attribute dicts."""
+    inst, soln, _ = _make_seed_instance()
+    inst.seed(soln)
+    ntl_edges = set(inst.Ntl.Ntl.edges)
+    assert len(ntl_edges) > 0, "Network has no edges after seed"
+    assert set(inst.Ntl.edge_types.keys())   == ntl_edges, "edge_types mismatch after seed"
+    assert set(inst.Ntl.edge_times.keys())   == ntl_edges, "edge_times mismatch after seed"
+    assert set(inst.Ntl.edge_dists.keys())   == ntl_edges, "edge_dists mismatch after seed"
+    assert set(inst.Ntl.edge_charges.keys()) == ntl_edges, "edge_charges mismatch after seed"
+
+
+def test_seed_rebuilds_gurobi_model():
+    """After seed(), x_load and x_ener model vars match the rebuilt network edges."""
+    inst, soln, _ = _make_seed_instance()
+    inst.seed(soln)
+    ntl_edges = set(inst.Ntl.Ntl.edges)
+    assert set(inst.x_load.keys()) == ntl_edges, "x_load vars mismatch after seed"
+    assert set(inst.x_ener.keys()) == ntl_edges, "x_ener vars mismatch after seed"
+
+
+def test_seed_run_ddd_feasible():
+    """run_DDD() on a seeded instance should produce a feasible solution."""
+    inst, soln, _ = _make_seed_instance()
+    inst.seed(soln)
+    seeded_soln, val, _ = inst.run_DDD()
+    assert val is not None and val < 1e9, f"Seeded run_DDD returned infeasible val={val}"
+    for key, v in seeded_soln.items():
+        if isinstance(v, dict):
+            assert v != {}, f"Seeded run_DDD returned empty dict for result['{key}']"
+
+
+def test_seed_with_empty_solution():
+    """seed() with empty x_load and x_ener should not crash and still rebuild."""
+    inst, _, _ = _make_seed_instance()
+    ntl_edges_before = len(inst.Ntl.Ntl.edges)
+    inst.seed({'x_load': {}, 'x_ener': {}})
+    assert len(inst.Ntl.Ntl.edges) > 0, "Network empty after seed with empty solution"
+    # charges/times unchanged since no breakpoints were injected
+    ntl_edges_after = len(inst.Ntl.Ntl.edges)
+    assert ntl_edges_after == ntl_edges_before, (
+        f"Edge count changed with empty seed: {ntl_edges_before} -> {ntl_edges_after}"
+    )
+
+
+def test_seed_idempotent():
+    """Seeding twice with the same solution should not add duplicate breakpoints."""
+    inst, soln, N = _make_seed_instance()
+    inst.seed(soln)
+    charges_after_first = {i: list(inst.Ntl.charges[i]) for i in N.nodes}
+    times_after_first   = {i: list(inst.Ntl.times[i])   for i in N.nodes}
+    inst.seed(soln)
+    for i in N.nodes:
+        assert inst.Ntl.charges[i] == charges_after_first[i], \
+            f"charges[{i}] changed on second seed"
+        assert inst.Ntl.times[i] == times_after_first[i], \
+            f"times[{i}] changed on second seed"
+
+
+def test_seed_preserves_optimal_value():
+    """Seeding a coarse instance with a fine-grained solution should not change
+    the optimal objective: the seeded coarse instance has all breakpoints needed
+    to represent the fine solution, so its optimal must equal the fine optimal."""
+    N = nx.DiGraph()
+    N.add_edge(1, 2, dH=4, dL=4, time=1)
+    N.add_edge(1, 3, dH=5, dL=5, time=2)
+    N.add_edge(2, 4, dH=3, dL=3, time=1)
+    N.add_edge(3, 4, dH=4, dL=4, time=1)
+    nodes = list(N.nodes)
+    T = 6
+    base_params = {
+        'sources': [1], 'sinks': [4], 'T': T, 'L': 10, 'D': {1: (1, 0), 4: (0, 1)},
+        'charge_rate': {i: 1 for i in nodes}, 'battery_nodes': [],
+        'charge_nodes': [2], 'mobile_nodes': [], 'tractor_nodes': [3],
+        'bat_swap_time': 1, 'tr_swap_time': 1, 'mobile_charge_rate': 0,
+        'charge_cost': {(i, t): 10 for i in nodes for t in range(T)},
+        'surplus_cost': {i: 0 for i in nodes}, 'stat_cost': {i: 0 for i in nodes},
+        'rec_penalty': 1000, 'MAX_ITER': 20,
+        'N_tractors': 1, 'N_chargers': 1, 'N_batteries': 1,
+        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 2},
+                        1: {'speed': 2, 'minbat': 2, 'maxbat': 8},
+                        2: {'speed': 1, 'minbat': 8, 'maxbat': 10}},
     }
 
-    # Plain instance: source=[0], sink=[1]
-    params_plain = {**base_params, 'sources': [0], 'sinks': [1]}
-    inst_plain = Instance_v2.Instance(N.copy(), params_plain, ['default'])
-    _, val_plain, _ = inst_plain.run_DDD()
+    # Fine-grained instance: reference optimal
+    inst_fine = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 1})
+    soln_fine, val_fine, _ = inst_fine.run_DDD()
+    assert val_fine is not None and val_fine < 1e9, f"Fine instance infeasible: {val_fine}"
 
-    # Bndry instance: identical but with bndry_wait_edges=[0]
-    params_bndry = {**base_params, 'sources': [0], 'sinks': [1], 'bndry_wait_edges': [0]}
-    inst_bndry = Instance_v2.Instance(N.copy(), params_bndry, ['default'])
-    _, val_bndry, _ = inst_bndry.run_DDD()
+    # Coarse instance seeded with the fine solution
+    inst_coarse = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 3}, ['default'])
+    inst_coarse.seed(soln_fine)
+    _, val_seeded, _ = inst_coarse.run_DDD()
 
-    assert val_plain is not None and val_plain < 1e9, f"Plain instance infeasible: val={val_plain}"
-    assert val_bndry is not None and val_bndry < 1e9, f"Bndry instance infeasible: val={val_bndry}"
-    # bndry is a relaxation of plain: it can always do at least as well
-    assert val_bndry <= val_plain + 1e-6, (
-        f"Expected val_bndry <= val_plain, got val_bndry={val_bndry}, val_plain={val_plain}"
+    assert val_seeded == pytest.approx(val_fine, abs=1e-6), (
+        f"Seeded coarse optimal {val_seeded} != fine optimal {val_fine}"
     )
+

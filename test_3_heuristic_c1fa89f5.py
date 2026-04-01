@@ -174,12 +174,13 @@ class TestC1fa89f5Instance(unittest.TestCase):
         parameters['sources'] = [s[0]]
         parameters['sinks']   = [t[0]]
         print(f"Source: {s[0]}, Sink: {t[0]}")
+        parameters['D'] = {s[0]: (5, 0), t[0]: (0, 5)}  # demand of 5 from source to sink
 
         instance.construct_model()
         soln, val, props = instance.run_DDD(LB=LB)
 
         self.assertIsNotNone(soln, "run_DDD returned None solution")
-        self.assertAlmostEqual(val, 57, places=2, msg=f"Expected objective 57.5, got {val}")
+        self.assertAlmostEqual(val, 77.38, places=2, msg=f"Expected objective 77.38, got {val}")
         
 
         print(f"c1fa89f5 — objective={val}, props={props}")

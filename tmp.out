@@ -1,0 +1,17 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.2, pluggy-1.6.0
+rootdir: /home/haripriya/Dropbox/Research/PhD/ev_tractor_trailer/code
+collected 8 items
+
+test_1_instance_v2.py .....
+
+=============================== warnings summary ===============================
+test_1_instance_v2.py: 96 warnings
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=557879) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+<frozen abc>:119: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+======================== 5 passed, 96 warnings in 2.08s ========================

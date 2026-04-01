@@ -1,0 +1,26 @@
+{
+  "config": [
+    "heuristic",
+    "simple_w_incoming_update"
+  ],
+  "objective": 92658.45,
+  "properties": {
+    "n_iterations": 2,
+    "timeout": true,
+    "size_of_graph": [
+      0,
+      0
+    ],
+    "avg_time_per_iter": 314.6158185005188,
+    "avg_graph_size_per_iter": [
+      9677.0,
+      335003.0
+    ]
+  },
+  "solution": {
+    "x_load": {},
+    "x_ener": {},
+    "a": {},
+    "n": {}
+  }
+}
