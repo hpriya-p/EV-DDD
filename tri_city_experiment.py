@@ -242,7 +242,7 @@ parameters = {
     'T': T, 
     'L': 100,
     'D': {la_idx:(la_supply, 0), sf_idx:(0, sf_demand), phx_idx:(phx_supply, phx_demand)}, 
-    'step_size': 3,
+    'step_size': 1,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
     'charge_nodes':  station_nodes + [i for i in N.nodes if(i not in station_nodes) and i % 2 == 0],
