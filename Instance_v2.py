@@ -414,6 +414,8 @@ class Instance:
                     curr_LB = M.ObjVal
 
                     assert curr_LB >= LB, "objective value too small"
+                    print('x_load:', dict((k, v) for k, v in x_load.items() if v > 0))
+                    print('x_ener:', dict((k, v) for k, v in x_ener.items() if v > 0))
                     corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
                     new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
 

@@ -241,8 +241,8 @@ T = 4 * 6 # unit: 15 minutes; want to cover 6 hrs
 parameters = {
     'T': T, 
     'L': 100,
-    'D': {la_idx:(la_supply, la_demand), sf_idx:(sf_supply, sf_demand), phx_idx:(phx_supply, phx_demand)}, 
-    'step_size': 5,
+    'D': {la_idx:(la_supply, 0), sf_idx:(0, sf_demand), phx_idx:(phx_supply, phx_demand)}, 
+    'step_size': 3,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
     'charge_nodes':  station_nodes + [i for i in N.nodes if(i not in station_nodes) and i % 2 == 0],
@@ -258,7 +258,7 @@ parameters = {
     'N_tractors': np.inf,
     'N_batteries': 0,
     'N_chargers': np.inf,
-    'speed_curve': {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
+    'speed_curve': speed_curve, # {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
     'bat_swap_time': 0,
     'tr_swap_time': 1, 
     'sources': [la_idx, sf_idx],
