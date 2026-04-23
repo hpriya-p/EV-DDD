@@ -24,16 +24,17 @@ np.random.seed(random_seed)
 PROCESSED_STATIONS_DF = "data/processed/stations_data.csv"
 LB = 20
 # bounding box
-MAX_LAT = 49
+MAX_LAT = 39
 MIN_LAT = 32
-MAX_LNG = -67
-MIN_LNG = -125
+MAX_LNG = -110
+MIN_LNG = -120
+
 
 # West Coast bounding box
-WEST_COAST_MIN_LAT = 34
-WEST_COAST_MAX_LAT = 45
-WEST_COAST_MIN_LNG = -125
-WEST_COAST_MAX_LNG = -114
+WEST_COAST_MIN_LAT = 32
+WEST_COAST_MAX_LAT = 39
+WEST_COAST_MIN_LNG = -120
+WEST_COAST_MAX_LNG = -110
 
 # Truck properties
 RANGE = 190 # miles
@@ -54,7 +55,7 @@ EDGE_THRESHOLD = 300  # miles - max edge length for connectivity
 
 SF_COORDS = (37.7749, -122.4194)
 LA_COORDS = (34.0522, -118.2437)
-
+PHX_COORDS = (33.4484, -112.0740)
 # Major West Coast cities (name, lat, lng)
 cities = [
     ('Seattle', 47.6062, -122.3321),

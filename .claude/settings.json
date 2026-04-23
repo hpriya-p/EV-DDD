@@ -12,7 +12,8 @@
       "Bash(git filter-repo --path data/edges.txt --invert-paths --force)",
       "Bash(git remote add origin git@github.com:hpriya-p/EV-DDD.git)",
       "Bash(git push -u origin main)",
-      "Bash(git checkout -b simple_update)"
+      "Bash(git checkout -b simple_update)",
+      "Bash(git -C /home/haripriya/Dropbox/Research/PhD/ev_tractor_trailer/code diff --stat lagrangian.py Experiments.ipynb)"
     ],
     "additionalDirectories": [
       "/home/haripriya/Dropbox/Research/PhD/ev_tractor_trailer/code"
