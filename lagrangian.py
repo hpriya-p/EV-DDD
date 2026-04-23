@@ -7,7 +7,7 @@ import networkx as nx
 
 
 
-def partition_graph(N, k):
+def partition_graph(N, Nt, k, T_delta):
     """
     Compute a k-balanced spatial partition of N and a 2-D partition of Nt into
     subgraphs of Nt.
@@ -63,7 +63,6 @@ def partition_graph(N, k):
     cut_count, part_vec = pymetis.part_graph(k, adjacency=adjacency)
     node_to_part = {n: part_vec[i] for i, n in enumerate(nodes)}
 
-    return cut_count, node_to_part, [e for e in N.edges if node_to_part[e[0]] != node_to_part[e[1]]]
 
 
 
@@ -81,11 +80,11 @@ def partition_graph(N, k):
         node_block[(i, t)] = (l, p)
 
     # ── Build one subgraph of Nt per block, with fake boundary nodes ─────────
-    subgraphs = [[nx.DiGraph() for _ in range(n_blocks)] for _ in range(k)]
+    subgraphs = dict(((l, p), nx.DiGraph()) for p in range(n_blocks) for l in range(k))
 
     # Add all internal nodes first
     for (i, t), (l, p) in node_block.items():
-        subgraphs[l][p].add_node((i, t))
+        subgraphs[(l, p)].add_node((i, t))
 
     # Add edges: internal edges are added as-is; cross-block edges get a fake
     # boundary node so that each subgraph remains self-contained.
@@ -96,16 +95,16 @@ def partition_graph(N, k):
             continue
         if block_u == block_v:
             l, p = block_u
-            subgraphs[l][p].add_edge(u, v, **data)
+            subgraphs[(l, p)].add_edge(u, v, **data)
         else:
             # Outgoing boundary: u's subgraph gets a fake sink node
             lu, pu = block_u
-            subgraphs[lu][pu].add_edge(u, f"t_{lu}_{pu}_{v}", **data)
+            subgraphs[(lu, pu)].add_edge(u, f"t_{lu}_{pu}_{v}", **data)
             # Incoming boundary: v's subgraph gets a fake source node
             lv, pv = block_v
-            subgraphs[lv][pv].add_edge(f"s_{lv}_{pv}_{u}", v, **data)
+            subgraphs[(lv, pv)].add_edge(f"s_{lv}_{pv}_{u}", v, **data)
 
-    return subgraphs, part_vec, cut_count
+    return subgraphs, node_block, cut_count
 
 
 
@@ -143,43 +142,23 @@ def lagrangian_decomposition(N, K, parameters, config=['heuristic']):
         One Instance per subgraph in L with modified Lagrangian objectives.
     """
     instances = dict()
-    cut_count, partition, boundary_edges = partition_graph(N, K)
+    subgraphs, node_block, cut_count = partition_graph(N, construct_time_expanded_network(N, parameters['T']), K, parameters['T'] // 10)
+    # node_block maps (i, t) to (l, p) 
 
     # construct relevant instances 
-    for k in range(K):
-            params = {(key, val) for key, val in parameters.items()}
-            Vk = [i for i in N.nodes if partition[i] == k]
-            Nk = N.subgraph(Vk).copy()
+    for (l, p), Nk in subgraphs.items():
+        params = {(key, val) for key, val in parameters.items()}
+        srcs = [v for v in Nk.nodes if isinstance(v, str) and v.startswith(f"s_{l}_{p}_")]
+        sinks = [v for v in Nk.nodes if isinstance(v, str) and v.startswith(f"t_{l}_{p}_")]
+        params['sources'] += srcs
+        params['sinks'] += sinks
 
-            # handle boundary edges due to spatial location
-            in_edges = [e for e in boundary_edges if e[0] not in Vk and e[1] in Vk]
-            out_edges = [e for e in boundary_edges if e[0] in Vk and e[1] not in Vk ]
-            Nk.add_edges_from(in_edges + out_edges)
-            srcs = [e[0] for e in in_edges]
-            sinks = [e[1] for e in out_edges]
-            params['sources'] += srcs
-            params['sinks'] += sinks
-
-            instances[k] = Instance(Nk, params, config)
-         
-    def get_boundary_edges(Ntl, partition_id):
-        in_edges += [e for e in Ntl.edges if partition.get(e[0][0], -1) != partition_id]
-        out_edges += [e for e in Ntl.edges if partition.get(e[1][0], -1) != partition_id]
-        return in_edges, out_edges
-  
+        instances[(l, p)] = Instance(Nk, params, config)
     
     solutions = dict()
-    properties = dict()
-    values = dict()
-    n_iter = 0
-    lambda1 = dict()
-    lambda2 = dict()
-    node_traffic_levels = dict()
-
-    def update_lambda_multiplier(l_dict, e, err):
-        return None 
 
     for k, inst in instances.items():
+        l, p = k 
         soln, val, prop = inst.run_DDD()
 
         # update solution and lambda multipliers. Note that the edges are from the 'converted flow', and so are *true* edges 
