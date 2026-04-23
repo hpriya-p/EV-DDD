@@ -241,7 +241,7 @@ T = 4 * 6 # unit: 15 minutes; want to cover 6 hrs
 parameters = {
     'T': T, 
     'L': 100,
-    'D': {la_idx:(la_supply, 0), sf_idx:(0, sf_demand), phx_idx:(phx_supply, phx_demand)}, 
+    'D': {la_idx:(0, la_demand), sf_idx:(sf_supply, 0), phx_idx:(phx_supply, 0)}, 
     'step_size': 1,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
