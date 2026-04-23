@@ -260,7 +260,9 @@ parameters = {
     'N_chargers': 0,
     'speed_curve': {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
     'bat_swap_time': 0,
-    'tr_swap_time': 1
+    'tr_swap_time': 1, 
+    'sources': [la_idx, sf_idx],
+    'sinks': [la_idx, sf_idx, phx_idx]
 }
 
 instance = Instance_v2.Instance(N, parameters, ['heuristic'], seed=None)
