@@ -201,7 +201,7 @@ for i, node in enumerate(all_selected_nodes):
         N.nodes[i]['charger_rate'] = 250 # new stations are 250 kwh, single charger 
 
 TRUCK_SPEED = 65  # miles per hour
-DL_FACTOR = 0.5   # dL = dH * factor (lighter load uses less battery)
+DL_FACTOR = 0.7   # dL = dH * factor (lighter load uses less battery)
 for u, v, data in N.edges(data=True):
     dist = data.pop('weight', 0)
     data['dH'] = int(dist/190 * 100)  # convert to percentage of battery range
@@ -237,12 +237,12 @@ phx_demand = commodity_flow_to_demand(2816.0 * 1000, 6)
 la_demand = commodity_flow_to_demand(546.0 * 1000, 6)
 sf_demand = la_supply - phx_demand
 assert sf_demand >= 0, "San Francisco demand should be non-negative"
-T = 4 * 6 # unit: 15 minutes; want to cover 6 hrs 
+T = 4 * 9 # unit: 15 minutes; 9 hrs to allow intermediate charging on LA-SF/PHX routes
 parameters = {
     'T': T, 
     'L': 100,
-    'D': {la_idx:(0, la_demand), sf_idx:(sf_supply, 0), phx_idx:(phx_supply, 0)}, 
-    'step_size': 1,
+    'D': {la_idx:(la_supply, 0), sf_idx:(0, sf_demand), phx_idx:(0, phx_demand)}, 
+    'step_size': 5,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
     'charge_nodes':  station_nodes + [i for i in N.nodes if(i not in station_nodes) and i % 2 == 0],
@@ -261,8 +261,8 @@ parameters = {
     'speed_curve': speed_curve, # {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
     'bat_swap_time': 0,
     'tr_swap_time': 1, 
-    'sources': [la_idx, sf_idx],
-    'sinks': [la_idx, sf_idx, phx_idx]
+    'sources': [la_idx],
+    'sinks': [sf_idx, phx_idx]
 }
 
 instance = Instance_v2.Instance(N, parameters, ['heuristic'], seed=None)
