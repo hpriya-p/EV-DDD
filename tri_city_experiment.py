@@ -266,7 +266,7 @@ parameters = {
 }
 
 instance = Instance_v2.Instance(N, parameters, ['heuristic'], seed=None)
-
+print(parameters['D'])
 soln, val, props = instance.run_DDD(LB=0, LP=False)
       
 

@@ -240,7 +240,6 @@ class ChargeTimeNetwork:
             self.charges = {i: list(np.unique(self.charges[i])) for i in self.charges.keys()}
             self.times = {i: [self.param['min_time']] + list(range(self.param['min_time'] + 1, self.param['T'] - 1, self.param['step_size'])) + [self.param['T'] - 1] for i in self.N.nodes}
             self.times = {i: list(np.unique(self.times[i])) for i in self.times.keys()}
-            print(self.charges)
         else:
             raise ValueError("Invalid config")
         
