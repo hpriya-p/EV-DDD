@@ -135,40 +135,30 @@ stations_west = stations_df[
 station_coords = set(zip(stations_west['lat'], stations_west['lng']))
 
 
-# ============================================================
-# Find the largest subset of nodes where no pair is within 10 miles
-# This is the Maximum Independent Set problem on the proximity graph
-# ============================================================
-
-# Get unique nodes from other_nodes_df (West Coast only)
-west_coast_nodes = [node for node in all_other_nodes if is_west_coast(node[0], node[1])]
-
-conflict_graph = nx.Graph()
-conflict_graph.add_nodes_from(range(len(west_coast_nodes)))
-
-for i in range(len(west_coast_nodes)):
-    for j in range(i + 1, len(west_coast_nodes)):
-        lat1, lng1 = west_coast_nodes[i]
-        lat2, lng2 = west_coast_nodes[j]
-        dist = haversine_miles(lat1, lng1, lat2, lng2)
-        if dist <= DISTANCE_THRESHOLD:
-            conflict_graph.add_edge(i, j)
-
-print(f"Conflict graph: {conflict_graph.number_of_nodes()} nodes, {conflict_graph.number_of_edges()} edges")
-
-# Find maximum independent set using networkx approximation
-# (exact MIS is NP-hard, but approximation works well for this size)
-
-independent_set_indices = nx.approximation.maximum_independent_set(conflict_graph)
-
-# Convert indices back to coordinates
-max_independent_set = [west_coast_nodes[i] for i in independent_set_indices]
-
-print(f"\nMaximum independent set size: {len(max_independent_set)}")
-print(f"(Out of {len(west_coast_nodes)} West Coast nodes)")
-print(f"\nThese {len(max_independent_set)} nodes are all more than {DISTANCE_THRESHOLD} miles apart from each other:")
-for node in sorted(max_independent_set):
-    print(f"  {node}")
+max_independent_set = [
+    (32.178328, -110.960207),
+    (32.596725, -117.019495),
+    (32.794671, -115.539473),
+    (33.30006, -111.96835),
+    (33.39639, -110.76888),
+    (33.603063, -114.598023),
+    (33.899899, -118.207088),
+    (34.02094, -117.385415),
+    (34.118101, -116.45646),
+    (34.421443, -119.684178),
+    (34.689589, -118.130371),
+    (34.886448, -117.079423),
+    (35.01643, -110.675005),
+    (35.263617, -112.194139),
+    (35.400164, -119.399727),
+    (36.075856, -119.043996),
+    (36.220567, -115.125553),
+    (36.72136, -119.761165),
+    (37.161682, -113.434692),
+    (37.72495, -113.056978),
+    (38.164391, -112.278183),
+    (38.786621, -112.084147),
+]
 
 # ============================================================
 # Combine stations + independent set, build graph
