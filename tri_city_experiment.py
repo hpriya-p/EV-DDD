@@ -1,3 +1,4 @@
+import random
 import time
 import pandas as pd
 import networkx as nx
@@ -19,7 +20,7 @@ import Instance_v2
 # add seed
 random_seed = 1
 
-np.random.seed(random_seed)
+random.seed(random_seed)
 
 PROCESSED_STATIONS_DF = "data/processed/stations_data.csv"
 LB = 0
@@ -157,6 +158,7 @@ print(f"Conflict graph: {conflict_graph.number_of_nodes()} nodes, {conflict_grap
 
 # Find maximum independent set using networkx approximation
 # (exact MIS is NP-hard, but approximation works well for this size)
+
 independent_set_indices = nx.approximation.maximum_independent_set(conflict_graph)
 
 # Convert indices back to coordinates
