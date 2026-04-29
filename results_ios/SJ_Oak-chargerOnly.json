@@ -3,18 +3,18 @@
     "heuristic",
     "simple_w_incoming_update"
   ],
-  "objective": 92658.45,
+  "objective": 0,
   "properties": {
-    "n_iterations": 2,
+    "n_iterations": 1,
     "timeout": true,
     "size_of_graph": [
       0,
       0
     ],
-    "avg_time_per_iter": 314.6158185005188,
+    "avg_time_per_iter": 0,
     "avg_graph_size_per_iter": [
-      9677.0,
-      335003.0
+      0,
+      0
     ]
   },
   "solution": {

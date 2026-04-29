@@ -150,6 +150,7 @@ class TestC1fa89f5InstanceMinTime3(unittest.TestCase):
         parameters['sources'] = [s[0]]
         parameters['sinks']   = [t[0]]
         print(f"Source: {s[0]}, Sink: {t[0]}")
+        parameters['D'] = {s[0]: (5, 0), t[0]: (0, 5)}
 
         instance.construct_model()
         soln, val, props = instance.run_DDD(LB=LB)

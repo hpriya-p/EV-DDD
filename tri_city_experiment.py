@@ -213,6 +213,7 @@ driving_time_hrs = nx.shortest_path_length(N, la_idx, sf_idx, 'time')
 print(f"Driving time from LA to SF node: {driving_time_hrs * 15:.2f} min)")
 driving_time_hrs = nx.shortest_path_length(N, la_idx, phx_idx, 'time')
 print(f"Driving time from LA to PHX node: {driving_time_hrs * 15:.2f} min)")
+ 
 
 # commodity flow = x/365 thousand tons per day from San Jose -> Oakland. 13 ton per truck, and 10% of market (actual is 23% EV truck market share by 2030 (https://blog.ucs.org/sam-wilson/we-can-electrify-one-in-three-heavy-duty-trucks-by-2030-heres-how/#:~:text=States%20are%20taking%20the%20lead%20in%20this,even%20without%20purchase%20incentives%20(see%20graph%20below)_
 def commodity_flow_to_demand(x, hrs, market_share=0.1,):
@@ -233,7 +234,7 @@ T = 4 * 9 # unit: 15 minutes; 9 hrs to allow intermediate charging on LA-SF/PHX 
 parameters = {
     'T': T, 
     'L': 100,
-    'D': {la_idx:(la_supply, 0), sf_idx:(0, sf_demand), phx_idx:(0, phx_demand)}, 
+    'D': {la_idx: (la_supply, la_demand), sf_idx: (sf_supply, sf_demand), phx_idx: (0, phx_demand)},
     'step_size': 5,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
@@ -253,8 +254,8 @@ parameters = {
     'speed_curve': speed_curve, # {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
     'bat_swap_time': 0,
     'tr_swap_time': 1, 
-    'sources': [la_idx],
-    'sinks': [sf_idx, phx_idx]
+    'sources': [la_idx, sf_idx],
+    'sinks':   [la_idx, sf_idx, phx_idx]
 }
 
 instance = Instance_v2.Instance(N, parameters, ['heuristic'], seed=None)

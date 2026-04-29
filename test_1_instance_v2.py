@@ -1,12 +1,7 @@
 import pytest
 import networkx as nx
 
-try:
-    import gurobipy
-    GUROBI_AVAILABLE = True
-except ImportError:
-    GUROBI_AVAILABLE = False
-
+GUROBI_AVAILABLE = True
 import Instance_v2
 
 pytestmark = pytest.mark.skipif(not GUROBI_AVAILABLE, reason="Gurobi not available")
@@ -629,5 +624,75 @@ def test_seed_preserves_optimal_value():
 
     assert val_seeded == pytest.approx(val_fine, abs=1e-6), (
         f"Seeded coarse optimal {val_seeded} != fine optimal {val_fine}"
+    )
+
+
+def test_source_and_sink_cross_flow():
+    """A node in both sources and sinks must receive transit trucks when its
+    demand exceeds its local supply.
+
+    Graph:  0 ↔ 1  (travel time=2, bidirectional)
+
+    D = {0: (supply=1, demand=2), 1: (supply=2, demand=1)}
+    sources = sinks = [0, 1]
+
+    Node 0's own supply truck can contribute at most 1 to its arrival count
+    at T-1, so the model must route at least 1 truck from node 1 to node 0
+    in transit — it cannot satisfy demand solely via waiting arcs at node 0.
+    """
+    N = nx.DiGraph()
+    N.add_edge(0, 1, dH=10, dL=5, time=2)
+    N.add_edge(1, 0, dH=10, dL=5, time=2)
+    nodes = list(N.nodes)
+    T = 8
+    params = {
+        'sources': [0, 1],
+        'sinks':   [0, 1],
+        'T': T,
+        'L': 100,
+        'D': {0: (1, 2), 1: (2, 1)},
+        'step_size': 1,
+        'MAX_ITER': 20,
+        'charge_rate': {i: 0 for i in nodes},
+        'battery_nodes': [],
+        'charge_nodes': [],
+        'mobile_nodes': [],
+        'tractor_nodes': [],
+        'bat_swap_time': 1,
+        'tr_swap_time': 1,
+        'mobile_charge_rate': 0,
+        'charge_cost': {(i, t): 0 for i in nodes for t in range(T)},
+        'surplus_cost': {i: 0 for i in nodes},
+        'stat_cost': {i: 0 for i in nodes},
+        'rec_penalty': 10000,
+        'N_tractors': 0,
+        'N_chargers': 0,
+        'N_batteries': 0,
+        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 100}},
+    }
+
+    inst = Instance_v2.Instance(N.copy(), params, ['default'])
+    soln, val, _ = inst.run_DDD()
+
+    assert val is not None and val < 1e9, f"run_DDD infeasible: val={val}"
+    for key, v in soln.items():
+        if isinstance(v, dict):
+            assert v != {}, f"run_DDD returned empty dict for result['{key}']"
+
+    # Both demand constraints must be satisfied
+    for node, (_, demand) in params['D'].items():
+        inflow = sum(v for e, v in soln['x_load'].items()
+                     if e[1][0] == node and e[1][2] == T - 1)
+        assert inflow >= pytest.approx(demand, abs=1e-4), (
+            f"Node {node}: demand={demand} not met, inflow at T-1={inflow}"
+        )
+
+    # Node 0 has supply=1 but demand=2: at least 1 truck must transit from
+    # node 1 to node 0 (a waiting arc at node 0 covers at most 1 of the 2).
+    transit_into_0 = sum(v for e, v in soln['x_load'].items()
+                         if e[0][0] == 1 and e[1][0] == 0)
+    assert transit_into_0 >= pytest.approx(1.0, abs=1e-4), (
+        f"Expected >= 1 truck to transit from node 1 to node 0 "
+        f"(supply=1 < demand=2 at node 0), got {transit_into_0}"
     )
 
