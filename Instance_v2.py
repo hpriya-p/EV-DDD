@@ -67,7 +67,7 @@ class Instance:
     """
     
     def parse_var_name(self, var_name):
-        # Assumes format: x_load[((i, g, t), (j, g2, t2), k)]
+        # Assumes format: x_load[((i, g, t, q),(j, g', t', q'),(k)), l]
         inside = var_name[var_name.find('[')+1:var_name.find(']')]
         num_commas = inside.count(',')
         if num_commas == 0:
@@ -75,7 +75,12 @@ class Instance:
             return i
         else:
             inside = inside.strip('[]')
-            tuples = inside.split('),(')
+            # Split commodity index l from the right: "((t1),(t2),(k)), l"
+            inner, l_str = inside.rsplit(', ', 1)
+            l = int(l_str)
+            # Strip outer parens from the edge triple: "(t1),(t2),(k)"
+            inner = inner.strip('()')
+            tuples = inner.split('),(')
             if len(tuples) == 3:
                 def _parse_el(s):
                     s = s.strip()
@@ -86,9 +91,9 @@ class Instance:
                 t1 = tuple(_parse_el(x) for x in tuples[0].strip('()').split(','))
                 t2 = tuple(_parse_el(x) for x in tuples[1].strip('()').split(','))
                 k = int(tuples[2].strip('()').split(',')[0])
-                return (t1, t2, k)
+                return ((t1, t2, k), l)
 
-    def __get_var_name(self, root, e):
+    def __get_var_name(self, root, e, k):
         n0 = tuple(int(x) for x in e[0])
         n1 = tuple(int(x) for x in e[1])
         if len(e) < 3 or e[2] == -1:
@@ -96,12 +101,12 @@ class Instance:
             j, g2, t2, q2 = e[1]
             matching_edges = [f for f in self.Ntl.Ntl.edges if e[0] == f[0] and e[1] == f[1] and self.Ntl.edge_charges[f] == max(0, g2 - g1) and self.Ntl.edge_dists[f] == max(g1 - g2, 0)]
             if len(matching_edges) == 0:
-                return root + "[" + str(n0) + "," + str(n1) + ",(0)]"
+                return root + "[(" + str(n0) + "," + str(n1) + ",(0)), " + str(k) + "]"
 
-            return root + "[" + str(n0) + "," + str(n1) + ",(" + str(int(matching_edges[0][2])) + ")]"
+            return root + "[(" + str(n0) + "," + str(n1) + ",(" + str(int(matching_edges[0][2])) + ")), " + str(k) + "]"
 
         else:
-            return root + "[" + str(n0) + "," + str(n1) + ",(" + str(int(e[2])) + ")]"
+            return root + "[(" + str(n0) + "," + str(n1) + ",(" + str(int(e[2])) + ")), " + str(k) + "]"
     
     def multi_in_edges(self, v):
         return list(self.Ntl.Ntl.in_edges(v, keys=True))
@@ -195,8 +200,8 @@ class Instance:
         # create variables
         for e in self.Ntl.Ntl.edges:
             for k in range(self.K):
-                self.x_load[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e))
-                self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e))
+                self.x_load[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e, k))
+                self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
         
            
         self.n = dict()
@@ -237,11 +242,20 @@ class Instance:
         self.model.update()
 
     def set_objective(self):
-        obj_expr = gp.quicksum((self.x_load[e]) * self.Ntl.edge_times[e] * self.param['value_for_time'] for e in self.x_load.keys() if e in self.Ntl.Ntl.edges) + gp.quicksum((self.x_ener[e]) * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])] for e in self.Ntl.Ntl.edges if self.Ntl.edge_charges[e] > 0) + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i] for i in self.N.nodes)
-        
+        obj_expr = (
+            gp.quicksum(self.x_load[e, k] * self.Ntl.edge_times[e] * self.param['value_for_time']
+                        for e in self.Ntl.Ntl.edges for k in range(self.K))
+            + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])]
+                          for e in self.Ntl.Ntl.edges for k in range(self.K) if self.Ntl.edge_charges[e] > 0)
+            + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i]
+                          for i in self.N.nodes)
+        )
+
         if 'lagrange_multipliers' in self.param.keys():
-            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['load'].get((e[0], e[1]), 0) * self.x_load[e] for e in self.x_load.keys())
-            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['ener'].get((e[0], e[1]), 0) * self.x_ener[e] for e in self.x_ener.keys())
+            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['load'].get((e[0], e[1]), 0) * self.x_load[e, k]
+                                    for e in self.Ntl.Ntl.edges for k in range(self.K))
+            obj_expr -= gp.quicksum(self.param['lagrange_multipliers']['ener'].get((e[0], e[1]), 0) * self.x_ener[e, k]
+                                    for e in self.Ntl.Ntl.edges for k in range(self.K))
 
         if 'D' in self.param.keys():
             self.model.setObjective(obj_expr, gp.GRB.MINIMIZE)
@@ -253,7 +267,7 @@ class Instance:
         Called instead of construct_model on DDD iterations after the first.
         """
         current_edges = set(self.Ntl.Ntl.edges)
-        model_edges   = set(self.x_load.keys())
+        model_edges   = set(e for e, k in self.x_load.keys())
         new_edges     = current_edges - model_edges
         removed_edges = model_edges   - current_edges
 
@@ -272,9 +286,9 @@ class Instance:
         for e in new_edges:
             for k in range(self.K):
                 self.x_load[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER,
-                                                      name=self.__get_var_name('x_load', (e, k)))
+                                                      name=self.__get_var_name('x_load', e, k))
                 self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER,
-                                                      name=self.__get_var_name('x_ener', (e, k)))
+                                                      name=self.__get_var_name('x_ener', e, k))
  
 
         self.model.update()
@@ -438,10 +452,14 @@ class Instance:
                     except:
                         pass
 
-                    corrected_flow, status = self.Ntl.convert_flow([x_load, x_ener])
-                    new_edge, removed_edge = self.Ntl.update([x_load, x_ener])
+                    corrected_flow = dict()
+                    for k in range(self.K):
+                        x_load_k = {e: flow for (e, l), flow in x_load.items() if l == k}
+                        x_ener_k = {e: flow for (e, l), flow in x_ener.items() if l == k}
+                        corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
+                        new_edge, removed_edge = self.Ntl.update([x_load_k, x_ener_k])
 
-                    if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
+                        if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
 
                     iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
 
@@ -469,14 +487,14 @@ class Instance:
                         avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
                         avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
                         print(corrected_flow)
-                        return {'x_load': corrected_flow[0], 'x_ener': corrected_flow[1], 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+                        return {'x_load': {k: corrected_flow[k][0] for k in range(self.K)}, 'x_ener': {k: corrected_flow[k][1] for k in range(self.K)}, 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
                     else:
                         self.update_model(penalty=penalty)
 
 
                     if verbose:
                         print("Solution cannot be extended to a feasible solution, updating network...")
-                        print({'x_load': corrected_flow[0], 'x_ener': corrected_flow[1]})
+                         
                         for i in a_.keys():
                             if a_[i] > 0:
                                 print("a[", i, "] = ", a_[i])
@@ -612,47 +630,47 @@ class Instance:
             Edge-key -> flow value mapping as returned by run_DDD()[0]['x_load'].
         """
         # 1. Insert breakpoints from the prior solution
-        x_load = soln['x_load']
-        x_ener = soln['x_ener']
-        modified = False 
-        for e in x_load.keys():
-            (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
-            if g1 not in self.Ntl.charges[i]:
-                self.Ntl.charges[i].append(g1)
-                self.Ntl.charges[i].sort()
-                modified = True 
-            if t1 not in self.Ntl.times[i]:
-                self.Ntl.times[i].append(t1)
-                self.Ntl.times[i].sort()
-                modified = True 
-            if g2 not in self.Ntl.charges[j]:
-                self.Ntl.charges[j].append(g2)
-                self.Ntl.charges[j].sort()
-                modified = True 
-            if t2 not in self.Ntl.times[j]:
-                self.Ntl.times[j].append(t2)
-                self.Ntl.times[j].sort()
-                modified = True 
-        
-        modified = False 
-        for e in x_ener.keys():
-            (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
-            if g1 not in self.Ntl.charges[i]:
-                self.Ntl.charges[i].append(g1)
-                self.Ntl.charges[i].sort()
-                modified = True 
-            if t1 not in self.Ntl.times[i] and t1 < self.param['T']:
-                self.Ntl.times[i].append(t1)
-                self.Ntl.times[i].sort()
-                modified = True 
-            if g2 not in self.Ntl.charges[j]:
-                self.Ntl.charges[j].append(g2)
-                self.Ntl.charges[j].sort()
-                modified = True 
-            if t2 not in self.Ntl.times[j] and t2 < self.param['T']:
-                self.Ntl.times[j].append(t2)
-                self.Ntl.times[j].sort()
-                modified = True 
+        modified = False
+        for edge_dict in soln['x_load'].values():
+            for e in edge_dict.keys():
+                (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
+                if g1 not in self.Ntl.charges[i]:
+                    self.Ntl.charges[i].append(g1)
+                    self.Ntl.charges[i].sort()
+                    modified = True
+                if t1 not in self.Ntl.times[i]:
+                    self.Ntl.times[i].append(t1)
+                    self.Ntl.times[i].sort()
+                    modified = True
+                if g2 not in self.Ntl.charges[j]:
+                    self.Ntl.charges[j].append(g2)
+                    self.Ntl.charges[j].sort()
+                    modified = True
+                if t2 not in self.Ntl.times[j]:
+                    self.Ntl.times[j].append(t2)
+                    self.Ntl.times[j].sort()
+                    modified = True
+
+        modified = False
+        for edge_dict in soln['x_ener'].values():
+            for e in edge_dict.keys():
+                (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
+                if g1 not in self.Ntl.charges[i]:
+                    self.Ntl.charges[i].append(g1)
+                    self.Ntl.charges[i].sort()
+                    modified = True
+                if t1 not in self.Ntl.times[i] and t1 < self.param['T']:
+                    self.Ntl.times[i].append(t1)
+                    self.Ntl.times[i].sort()
+                    modified = True
+                if g2 not in self.Ntl.charges[j]:
+                    self.Ntl.charges[j].append(g2)
+                    self.Ntl.charges[j].sort()
+                    modified = True
+                if t2 not in self.Ntl.times[j] and t2 < self.param['T']:
+                    self.Ntl.times[j].append(t2)
+                    self.Ntl.times[j].sort()
+                    modified = True
         
         if modified: 
             for i in self.N.nodes:

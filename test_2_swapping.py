@@ -25,7 +25,7 @@ class TestSwap(unittest.TestCase):
             'sinks': [3],
             'T': 6,
             'L': 6,
-            'D': {1: (1, 0), 3: (0, 1)},  # demand of 1 from node 1 to node 3
+            'D': {(1, 3): 1},
             'charge_rate': {i: 1 for i in self.N.nodes},
             'battery_nodes': [],
             'charge_nodes': [],
@@ -52,9 +52,10 @@ class TestSwap(unittest.TestCase):
 
         result, val, solve_prop = inst.run_DDD()
 
-        for key, v in result.items():
-            if isinstance(v, dict):
-                self.assertNotEqual(v, {}, f"run_DDD returned empty dict for result['{key}']")
+        for k, edge_dict in result['x_load'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_load for commodity {k}")
+        for k, edge_dict in result['x_ener'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_ener for commodity {k}")
 
         expected_x_load = {
             ((1, 6, 0, inst.Ntl.get_q(1, 6)), (2, 1, 1, inst.Ntl.get_q(2, 1))): 1.0,
@@ -78,8 +79,8 @@ class TestSwap(unittest.TestCase):
         print("\n--- e_load_ener constraint slacks (x_ener - x_load) ---")
         for e in inst.Ntl.Ntl.edges(keys=True):
             if inst.Ntl.edge_types[e] == 'transit_H' and e[1][0] not in inst.param['battery_nodes']:
-                x_e = result['x_ener'].get(e[:2], 0)
-                x_l = result['x_load'].get(e[:2], 0)
+                x_e = sum(d.get(e[:2], 0) for d in result['x_ener'].values())
+                x_l = sum(d.get(e[:2], 0) for d in result['x_load'].values())
                 print(f"  e_load_ener[{e}]: slack={x_e - x_l}  (x_ener={x_e}, x_load={x_l})")
         # self.assertEqual(result['x_load'], expected_x_load)
         # self.assertEqual(result['x_ener'], expected_x_ener)
@@ -96,8 +97,8 @@ class TestSwap(unittest.TestCase):
             'sinks': [3],
             'T': 7,
             'L': 6,
-            'D': {1: (1, 0), 3: (0, 1)},  # demand of 1 from node 1 to node 3
-            'min_time': 1, 
+            'D': {(1, 3): 1},
+            'min_time': 1,
             'charge_rate': {i: 1 for i in self.N.nodes},
             'battery_nodes': [],
             'charge_nodes': [],
@@ -129,11 +130,10 @@ class TestSwap(unittest.TestCase):
                 print(f"{name}: {expr} {c.Sense} {c.RHS}")
             else:
                 print(f"{name}: not found")
-        for key, v in result.items():
-            if isinstance(v, dict):
-                self.assertNotEqual(v, {}, f"run_DDD returned empty dict for result['{key}']")
-
-        
+        for k, edge_dict in result['x_load'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_load for commodity {k}")
+        for k, edge_dict in result['x_ener'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_ener for commodity {k}")
 
         print(result)
         # same expected checks as the original test
@@ -161,7 +161,7 @@ class TestMultipleSources(unittest.TestCase):
             'sinks': [4],
             'T': T,
             'L': 6,
-            'D': {1: (1, 0), 2: (1, 0), 4: (0, 2)},  # demand of 1 from nodes 1 and 2 to node 4
+            'D': {(1, 4): 1, (2, 4): 1},  # 1 truck from node 1, 1 from node 2, both to node 4
             'charge_rate': {i: 0 for i in nodes},
             'battery_nodes': [],
             'charge_nodes': [],
@@ -187,20 +187,23 @@ class TestMultipleSources(unittest.TestCase):
         inst = Instance(self.N, self.parameters, ['default'])
         result, val, _ = inst.run_DDD()
 
-        for key, v in result.items():
-            if isinstance(v, dict):
-                self.assertNotEqual(v, {}, f"run_DDD returned empty dict for result['{key}']")
+        for k, edge_dict in result['x_load'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_load for commodity {k}")
+        for k, edge_dict in result['x_ener'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_ener for commodity {k}")
 
         print("Multiple sources result:", result)
         print("val:", val)
 
         # Both trucks must reach the sink: total x_load flow into sink == D == 2
         sink_flow = sum(
-            v for (e, v) in result['x_load'].items()
+            flow for edge_dict in result['x_load'].values()
+            for e, flow in edge_dict.items()
             if e[1][0] in self.parameters['sinks'] and e[1][2] == self.parameters['T'] - 1
         )
-        self.assertAlmostEqual(sink_flow, self.parameters['D'][4][1], places=4,
-                               msg=f"Expected {self.parameters['D'][4][1]} units at sink, got {sink_flow}")
+        expected_at_sink = sum(v for (src, snk), v in self.parameters['D'].items() if snk == 4)
+        self.assertAlmostEqual(sink_flow, expected_at_sink, places=4,
+                               msg=f"Expected {expected_at_sink} units at sink, got {sink_flow}")
 
 
 if __name__ == '__main__':

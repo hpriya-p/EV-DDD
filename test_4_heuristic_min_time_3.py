@@ -150,15 +150,16 @@ class TestC1fa89f5InstanceMinTime3(unittest.TestCase):
         parameters['sources'] = [s[0]]
         parameters['sinks']   = [t[0]]
         print(f"Source: {s[0]}, Sink: {t[0]}")
-        parameters['D'] = {s[0]: (5, 0), t[0]: (0, 5)}
+        parameters['D'] = {(s[0], t[0]): 5}  # 5 trucks from source to sink
 
         instance.construct_model()
         soln, val, props = instance.run_DDD(LB=LB)
 
         self.assertIsNotNone(soln, "run_DDD returned None solution")
-        for key, v in soln.items():
-            if isinstance(v, dict):
-                self.assertNotEqual(v, {}, f"run_DDD returned empty dict for result['{key}']")
+        for k, edge_dict in soln['x_load'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_load for commodity {k}")
+        for k, edge_dict in soln['x_ener'].items():
+            self.assertNotEqual(edge_dict, {}, f"run_DDD returned empty x_ener for commodity {k}")
 
         print(f"c1fa89f5 min_time=3 — objective={val}, props={props}")
         return soln

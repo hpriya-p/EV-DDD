@@ -53,7 +53,7 @@ def _base_params(N, speed_curve, T=15, L=12):
         'sinks': [3],
         'T': T,
         'L': L,
-        'D': {1: (1, 0), 3: (0, 1)},
+        'D': {(1, 3): 1},
         'step_size': 1,
         'MAX_ITER': 20,
         'charge_rate': {i: 2 for i in nodes},
@@ -266,19 +266,20 @@ class TestInstance4Segments:
     def test_solution_dicts_nonempty(self):
         inst = self._make_instance()
         soln, val, _ = inst.run_DDD()
-        for key, v in soln.items():
-            if isinstance(v, dict):
-                assert v != {}, f"run_DDD returned empty dict for result['{key}']"
+        for k, edge_dict in soln['x_load'].items():
+            assert edge_dict != {}, f"run_DDD returned empty x_load for commodity {k}"
+        for k, edge_dict in soln['x_ener'].items():
+            assert edge_dict != {}, f"run_DDD returned empty x_ener for commodity {k}"
 
     def test_x_load_vars_cover_all_network_edges(self):
         inst = self._make_instance()
         ntl_edges = set(inst.Ntl.Ntl.edges)
-        assert set(inst.x_load.keys()) == ntl_edges
+        assert set(e for e, k in inst.x_load.keys()) == ntl_edges
 
     def test_x_ener_vars_cover_all_network_edges(self):
         inst = self._make_instance()
         ntl_edges = set(inst.Ntl.Ntl.edges)
-        assert set(inst.x_ener.keys()) == ntl_edges
+        assert set(e for e, k in inst.x_ener.keys()) == ntl_edges
 
 
 # ---------------------------------------------------------------------------
@@ -312,11 +313,13 @@ class TestInstance5Segments:
         soln, val, _ = inst.run_DDD()
         T = params['T']
         sink_flow = sum(
-            v for e, v in soln['x_load'].items()
+            flow for edge_dict in soln['x_load'].values()
+            for e, flow in edge_dict.items()
             if e[1][0] == 3 and e[1][2] == T - 1
         )
-        assert sink_flow == pytest.approx(params['D'][3][1], abs=1e-4), (
-            f"Sink flow {sink_flow} != demand {params['D'][3][1]}"
+        demand_at_3 = sum(v for (src, snk), v in params['D'].items() if snk == 3)
+        assert sink_flow == pytest.approx(demand_at_3, abs=1e-4), (
+            f"Sink flow {sink_flow} != demand {demand_at_3}"
         )
 
 
@@ -333,7 +336,7 @@ def _make_seed_instance_4seg(step_size=3):
     nodes = list(N.nodes)
     T, L = 15, 12
     base_params = {
-        'sources': [1], 'sinks': [3], 'T': T, 'L': L, 'D': {1: (1, 0), 3: (0, 1)},
+        'sources': [1], 'sinks': [3], 'T': T, 'L': L, 'D': {(1, 3): 1},
         'step_size': 1,
         'MAX_ITER': 100,
         'charge_rate': {i: 2 for i in nodes},
@@ -361,12 +364,13 @@ def test_seed_with_4_segment_curve_breakpoints_inserted():
     """seed() must insert all (g, t) pairs from the fine solution into Ntl."""
     inst, soln, _ = _make_seed_instance_4seg()
     inst.seed(soln)
-    for e in soln['x_load']:
-        (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
-        assert g1 in inst.Ntl.charges[i]
-        assert t1 in inst.Ntl.times[i]
-        assert g2 in inst.Ntl.charges[j]
-        assert t2 in inst.Ntl.times[j]
+    for edge_dict in soln['x_load'].values():
+        for e in edge_dict:
+            (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
+            assert g1 in inst.Ntl.charges[i]
+            assert t1 in inst.Ntl.times[i]
+            assert g2 in inst.Ntl.charges[j]
+            assert t2 in inst.Ntl.times[j]
 
 
 def test_seed_with_4_segment_curve_run_ddd_feasible():
