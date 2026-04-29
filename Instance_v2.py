@@ -175,7 +175,7 @@ class Instance:
             for nodes, v in self.param['D'].items():
                 src, sink = nodes
                 self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == src and e[0][2] == self.param['min_time'])  == v,name=f"demand_{src}_src")
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1)  == v,name=f"demand_{sink}_dest")
+                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == sink and e[0][2] == self.param['min_time'])  == v,name=f"demand_{sink}_dest")
                 k += 1
         # else:
         #     for i in self.param['sources']:
@@ -443,8 +443,7 @@ class Instance:
                     curr_LB = M.ObjVal
 
                     assert curr_LB >= LB, "objective value too small"
-                    print('x_load:', dict((k, v) for k, v in x_load.items() if v > 0))
-                    print('x_ener:', dict((k, v) for k, v in x_ener.items() if v > 0))
+                   
                     print('a:', dict((k, v) for k, v in a_.items() if v > 0))
                     print('n:', dict((k, v) for k, v in n_.items() if v > 0))
                     try:
@@ -456,6 +455,8 @@ class Instance:
                     for k in range(self.K):
                         x_load_k = {e: flow for (e, l), flow in x_load.items() if l == k}
                         x_ener_k = {e: flow for (e, l), flow in x_ener.items() if l == k}
+                        print(f'x_load_{k}:', dict((k, v) for k, v in x_load.items() if v > 0))
+                        print(f'x_ener_{k}:', dict((k, v) for k, v in x_ener.items() if v > 0))
                         corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
                         new_edge, removed_edge = self.Ntl.update([x_load_k, x_ener_k])
 

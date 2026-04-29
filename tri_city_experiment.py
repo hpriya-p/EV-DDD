@@ -234,8 +234,8 @@ T = 4 * 9 # unit: 15 minutes; 9 hrs to allow intermediate charging on LA-SF/PHX 
 parameters = {
     'T': T, 
     'L': 100,
-    'D': {la_idx: (la_supply, la_demand), sf_idx: (sf_supply, sf_demand), phx_idx: (0, phx_demand)},
-    'step_size': 5,
+    'D': {(la_idx, sf_idx): sf_demand, (la_idx, phx_idx): phx_demand, (sf_idx, la_idx): la_demand},
+    'step_size': 10,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
     'charge_nodes':  station_nodes + [i for i in N.nodes if(i not in station_nodes) and i % 2 == 0],
