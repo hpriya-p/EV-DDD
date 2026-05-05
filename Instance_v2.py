@@ -171,12 +171,10 @@ class Instance:
     def __constr_demand(self):
         assert 'D' in self.param.keys()
         if 'D' in self.param.keys():
-            k = 0
-            for nodes, v in self.param['D'].items():
+            for k, (nodes, v) in enumerate(self.param['D'].items()):
                 src, sink = nodes
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == src and e[0][2] == self.param['min_time'])  == v,name=f"demand_{src}_src")
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == sink and e[0][2] == self.param['min_time'])  == v,name=f"demand_{sink}_dest")
-                k += 1
+                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == src and e[0][2] == self.param['min_time']) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == 0) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == self.param['T'] - 1)  == v,name=f"demand_{src}_{k}_src")
+                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == sink and e[0][2] == self.param['min_time'])  == v,name=f"demand_{sink}_{k}_dest")
         # else:
         #     for i in self.param['sources']:
         #         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == i and e[0][2] == self.param['min_time']) == self.D[i], name=f"demand_{i}_src")
@@ -185,7 +183,7 @@ class Instance:
 
     def construct_model(self, penalty=False):
         self.model = gp.Model()
-        self.model.setParam('MIPGap', 0.02)
+        self.model.setParam('MIPGap', 0.05)
         self.x_load = dict()
         self.x_ener = dict()
         #self.D = dict()
@@ -212,9 +210,9 @@ class Instance:
             else:
                 self.n[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
             if i in self.param['charge_nodes']:
-                self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
+                self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name='a[' + str(i) + ']')
             else:
-                self.a[i] = self.model.addVar(lb=0, ub=0,  vtype=gp.GRB.BINARY, name='a[' + str(i) + ']')
+                self.a[i] = self.model.addVar(lb=0, ub=0,  vtype=gp.GRB.INTEGER, name='a[' + str(i) + ']')
         self.model.update()
         
         for v in self.Ntl.Ntl.nodes:
@@ -453,10 +451,10 @@ class Instance:
 
                     corrected_flow = dict()
                     for k in range(self.K):
-                        x_load_k = {e: flow for (e, l), flow in x_load.items() if l == k}
-                        x_ener_k = {e: flow for (e, l), flow in x_ener.items() if l == k}
-                        print(f'x_load_{k}:', dict((k, v) for k, v in x_load.items() if v > 0))
-                        print(f'x_ener_{k}:', dict((k, v) for k, v in x_ener.items() if v > 0))
+                        x_load_k = {key[0]: flow for key, flow in x_load.items() if key[1] == k and flow > 0}
+                        x_ener_k = {key[0]: flow for  key, flow in x_ener.items() if key[1] == k and flow > 0}
+                        print(f'x_load_{k}:', x_load_k)
+                        print(f'x_ener_{k}:', x_ener_k)
                         corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
                         new_edge, removed_edge = self.Ntl.update([x_load_k, x_ener_k])
 

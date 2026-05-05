@@ -36,6 +36,65 @@ def node_pos(idx):
     lat, lng = all_selected_nodes[idx]
     return lng, lat  # cartopy wants (lon, lat)
 
+# ── New-run node positions: {spatial_id: (lat, lng)} ─────────────────────────
+NEW_NODE_POS = {
+    0:(34.421443,-119.684178), 1:(36.167392,-94.119169),
+    2:(34.071417,-99.009382),  3:(34.689589,-118.130371),
+    4:(36.434113,-99.427596),  5:(35.400164,-119.399727),
+    6:(37.2129649,-93.37103),  7:(30.25011,-93.01142),
+    8:(36.751521,-96.000152),  9:(35.35468,-94.437379),
+    10:(38.89357,-94.36045),   11:(33.7885884,-118.2150827),
+    12:(32.596725,-117.019495),13:(33.30006,-111.96835),
+    14:(35.392817,-97.422948), 15:(38.96627,-95.700495),
+    16:(30.725159,-96.425728), 17:(37.737099,-97.32375),
+    18:(34.188212,-97.171022), 19:(33.94423,-96.41932),
+    20:(30.209862,-92.002378), 21:(37.183969,-104.499646),
+    22:(32.267588,-107.774524),23:(36.72136,-119.761165),
+    24:(30.437821,-95.498724), 25:(35.079896,-106.746225),
+    26:(35.840761,-98.419831), 27:(31.207465,-95.996079),
+    28:(33.899899,-118.207088),29:(33.3874378,-110.7609849),
+    30:(34.02094,-117.385415), 31:(33.603063,-114.598023),
+    32:(35.189976,-101.706309),33:(35.853211,-94.989243),
+    34:(35.004614,-106.032837),35:(31.151717,-93.265081),
+    36:(36.706596,-101.443207),37:(37.069631,-100.905444),
+    38:(32.62712,-96.74537),   39:(36.075856,-119.043996),
+    40:(35.65758,-105.993406), 41:(32.181782,-94.334174),
+    42:(30.330588,-97.701649), 43:(35.01643,-110.675005),
+    44:(35.25655,-96.671004),  45:(33.3021433,-111.9552863),
+    46:(36.535661,-97.33916),  47:(32.698465,-97.959695),
+    48:(33.984094,-106.887526),49:(32.7658795,-96.8754612),
+    50:(35.309665,-99.631741), 51:(31.784139,-93.08731),
+    52:(33.0390751,-117.2841996),53:(38.164391,-112.278183),
+    54:(34.4349097,-119.9212861),55:(31.499498,-97.173412),
+    56:(33.9541734,-117.5556971),57:(34.118101,-116.45646),
+    58:(36.71838,-108.167694), 59:(31.940555,-102.169802),
+    60:(36.081743,-96.054325), 61:(32.469998,-93.672804),
+    62:(34.4425082,-119.7812613),63:(37.648431,-98.094183),
+    64:(32.448848,-100.439583),65:(32.627591,-97.314361),
+    66:(38.54421,-106.92517),  67:(34.886448,-117.079423),
+    68:(35.9874334,-119.961999),69:(32.794671,-115.539473),
+    70:(36.220567,-115.125553),71:(35.106478,-92.43572),
+    72:(34.584172,-98.396813), 73:(33.39639,-110.76888),
+    74:(37.8135094,-119.8800771),75:(35.87844,-97.392471),
+    76:(35.490972,-98.967096), 77:(33.8310496,-116.5452277),
+    78:(32.354553,-95.302495), 79:(37.962455,-100.846437),
+    80:(32.178328,-110.960207),81:(38.7747705,-119.9029911),
+    82:(33.463568,-112.459255),83:(36.009923,-114.784826),
+    84:(35.3002628,-119.0381956),85:(36.249164,-95.333829),
+    86:(33.6699802,-96.6120405),87:(38.971499,-92.294316),
+    88:(32.029056,-93.713243), 89:(33.8722233,-118.2654222),
+    90:(35.263617,-112.194139),91:(37.199194,-93.402643),
+    92:(33.73573,-97.14484),   93:(32.881785,-111.777561),
+    94:(37.161682,-113.434692),95:(30.35815,-99.606129),
+    96:(34.773291,-96.697633), 97:(34.12755,-118.443664),
+    98:(31.34545,-92.51807),   99:(38.945105,-104.724068),
+    100:(30.0774,-99.10731),
+}
+
+def new_node_pos(i):
+    lat, lng = NEW_NODE_POS[i]
+    return lng, lat
+
 # ── x_load flow ───────────────────────────────────────────────────────────────
 # Keys may contain np.int64 values; normalize to plain int for indexing.
 def _norm(key):
@@ -114,59 +173,151 @@ def nearest_city(node_idx, threshold=60):
             best, best_d = name, d
     return best
 
+# ── New flow data (3 commodities) ────────────────────────────────────────────
+_new_loads = [
+    # commodity 0
+    {((39,69,1,2),(74,6,1,0),0):1,((67,13,1,1),(67,100,1,3),0):1,
+     ((39,28,1,1),(39,69,1,2),0):1,((74,6,1,0),(74,6,119,0),0):1,
+     ((31,0,1,0),(31,100,1,3),0):1,((13,80,0,3),(31,0,1,0),0):1,
+     ((31,100,1,3),(67,13,1,1),0):1,((67,100,1,3),(39,28,1,1),0):1},
+    # commodity 1
+    {((56,34,1,1),(57,1,1,0),0):3,((28,52,1,2),(56,34,1,1),0):3,
+     ((57,1,1,0),(57,67,1,2),0):3,((57,67,1,2),(31,10,1,1),0):3,
+     ((69,0,1,0),(69,100,1,3),0):1,((30,72,1,2),(30,95,1,3),0):2,
+     ((30,95,1,3),(31,10,1,1),0):5,((13,20,1,1),(13,20,119,1),0):8,
+     ((13,49,1,2),(13,49,119,2),0):1,((82,4,1,0),(82,64,1,2),0):1,
+     ((82,35,1,1),(13,20,1,1),0):8,((31,10,1,1),(31,100,1,3),0):8,
+     ((82,64,1,2),(13,49,1,2),0):1,((28,24,0,1),(28,52,1,2),0):3,
+     ((28,90,0,3),(69,0,1,0),0):1,((28,96,0,3),(30,72,1,2),0):2,
+     ((28,100,0,3),(30,75,1,2),0):3,((30,75,1,2),(30,95,1,3),0):3,
+     ((31,100,1,3),(82,35,1,1),0):8,((69,100,1,3),(82,4,1,0),0):1},
+    # commodity 2
+    {((30,95,1,3),(31,10,1,1),0):1,((31,10,1,1),(31,80,1,3),0):1,
+     ((13,0,1,0),(13,0,119,0),0):1,((28,100,0,3),(30,75,1,2),0):1,
+     ((30,75,1,2),(30,95,1,3),0):1,((31,80,1,3),(13,0,1,0),0):1,
+     ((49,40,0,1),(49,40,0,2),0):1},
+]
+_new_eners = [
+    # commodity 0
+    {((39,69,1,2),(74,6,1,0),0):1,((5,2,1,0),(5,2,16,0),0):1,
+     ((67,13,1,1),(67,13,16,1),0):1,((39,28,1,1),(5,2,1,0),0):1,
+     ((5,2,16,0),(5,2,31,0),0):1,((67,13,16,1),(67,13,119,1),0):1,
+     ((5,2,31,0),(5,2,119,0),0):1,((74,6,1,0),(74,6,16,0),0):1,
+     ((68,73,1,2),(39,69,1,2),0):1,((39,100,1,3),(68,73,1,2),0):1,
+     ((31,0,1,0),(31,0,16,0),0):1,((31,0,16,0),(31,0,119,0),0):1,
+     ((13,80,0,3),(31,0,1,0),0):1,((31,100,1,3),(67,13,1,1),0):1,
+     ((31,100,0,3),(31,100,1,3),0):1,((67,100,1,3),(39,28,1,1),0):1,
+     ((67,100,0,3),(67,100,1,3),0):1,((82,100,0,3),(45,100,1,3),0):1},
+    # commodity 1
+    {((56,34,1,1),(57,1,1,0),0):3,((28,52,1,2),(56,34,1,1),0):3,
+     ((57,1,1,0),(57,1,16,0),0):3,((57,67,1,2),(31,10,1,1),0):3,
+     ((57,1,16,0),(57,1,119,0),0):3,((69,0,1,0),(69,0,119,0),0):1,
+     ((30,72,1,2),(56,67,1,2),0):3,((30,95,1,3),(31,10,1,1),0):5,
+     ((13,20,1,1),(45,20,1,1),1):8,((82,35,1,1),(13,20,1,1),0):8,
+     ((28,90,0,3),(69,0,1,0),0):1,((28,96,0,3),(30,72,1,2),0):3,
+     ((56,67,1,2),(89,53,1,2),0):3,((28,100,0,3),(30,75,1,2),0):3,
+     ((30,75,1,2),(57,67,1,2),0):3,((31,100,1,3),(82,35,1,1),0):8,
+     ((31,100,0,3),(31,100,1,3),0):8,((69,100,1,3),(82,4,1,0),0):1},
+    # commodity 2
+    {((57,67,1,2),(89,13,1,1),0):1,((89,13,1,1),(11,12,1,1),0):1,
+     ((11,12,1,1),(89,9,1,0),0):1,((30,95,1,3),(31,10,1,1),0):1,
+     ((28,100,0,3),(30,75,1,2),0):1,((30,75,1,2),(57,67,1,2),0):1,
+     ((31,80,1,3),(13,0,1,0),0):1,((31,80,0,3),(31,80,1,3),0):1},
+]
+
+COMMODITY_COLORS = ['#E8A000', '#2CA02C', '#9467BD']   # amber, green, purple
+COMMODITY_NAMES  = ['Commodity 0', 'Commodity 1 (LA→PHX)', 'Commodity 2 (DAL→PHX)']
+
+def _transit(flow_dict):
+    te = {}
+    for (src, dst, _), flow in flow_dict.items():
+        i, j = src[0], dst[0]
+        if i != j:
+            te[(i, j)] = te.get((i, j), 0) + flow
+    return te
+
+new_transit_load = [_transit(d) for d in _new_loads]
+new_transit_ener = [_transit(d) for d in _new_eners]
+
+new_all_nodes = set()
+for te in new_transit_load + new_transit_ener:
+    for i, j in te:
+        new_all_nodes.update([i, j])
+
+NEW_CITIES = {28: 'LA', 13: 'PHX', 49: 'DAL'}
+
 # ── Plot ──────────────────────────────────────────────────────────────────────
-fig = plt.figure(figsize=(13, 9))
+fig = plt.figure(figsize=(18, 9))
 proj = ccrs.PlateCarree()
 ax = fig.add_subplot(1, 1, 1, projection=proj)
 
-ax.set_extent([-122, -109, 31.5, 39.5], crs=proj)
+ax.set_extent([-122, -91, 29.5, 40], crs=proj)
 ax.add_feature(cfeature.LAND,       facecolor='#f5f5f0')
 ax.add_feature(cfeature.OCEAN,      facecolor='#d0e8f5')
 ax.add_feature(cfeature.STATES,     edgecolor='#aaaaaa', linewidth=0.8)
 ax.add_feature(cfeature.COASTLINE,  edgecolor='#888888', linewidth=0.8)
 ax.add_feature(cfeature.BORDERS,    edgecolor='#888888', linewidth=0.8)
 
-# Draw transit arrows
-max_flow = max(transit_edges.values())
-for (i, j), flow in transit_edges.items():
-    xi, yi = node_pos(i)
-    xj, yj = node_pos(j)
-    lw = 1 + 4 * flow / max_flow
-    ax.annotate(
-        '', xy=(xj, yj), xytext=(xi, yi),
-        arrowprops=dict(arrowstyle='->', color='steelblue', lw=lw,
-                        connectionstyle='arc3,rad=0.1'),
-        transform=proj, zorder=4
-    )
-    mx, my = (xi + xj) / 2, (yi + yj) / 2
-    ax.text(mx, my, f'{int(flow)}', fontsize=8, color='steelblue',
-            ha='center', va='center', fontweight='bold',
-            bbox=dict(fc='white', ec='none', alpha=0.7, pad=1),
-            transform=proj, zorder=5)
+# ── New flows ─────────────────────────────────────────────────────────────────
+all_new_flows = [(new_transit_load[k], new_transit_ener[k]) for k in range(3)]
+max_new = max((f for te, ee in all_new_flows for f in list(te.values()) + list(ee.values())), default=1)
 
-# Draw nodes
-for n in all_nodes:
-    x, y = node_pos(n)
-    is_charge  = n in charging_nodes
-    is_transit = any(n == i or n == j for i, j in transit_edges)
-    color  = '#e05c2a' if is_transit else '#aaaaaa'
-    marker = 'D' if is_charge else 'o'
-    ax.plot(x, y, marker=marker, markersize=10, color=color,
-            markeredgecolor='white', markeredgewidth=1,
-            transform=proj, zorder=6)
-    city = nearest_city(n)
-    label = city if city else str(n)
-    ax.text(x, y + 0.3, label, fontsize=8, ha='center',
+for k, (te_load, te_ener) in enumerate(all_new_flows):
+    color = COMMODITY_COLORS[k]
+
+    # x_ener: light dashed background
+    for (i, j), flow in te_ener.items():
+        if (i, j) in te_load:
+            continue  # drawn as solid below
+        xi, yi = new_node_pos(i)
+        xj, yj = new_node_pos(j)
+        lw = 0.6 + 2.5 * flow / max_new
+        ax.annotate('', xy=(xj, yj), xytext=(xi, yi),
+            arrowprops=dict(arrowstyle='->', color=color, lw=lw,
+                            linestyle='dashed', alpha=0.35,
+                            connectionstyle='arc3,rad=0.08'),
+            transform=proj, zorder=3)
+
+    # x_load: solid arrows
+    for (i, j), flow in te_load.items():
+        xi, yi = new_node_pos(i)
+        xj, yj = new_node_pos(j)
+        lw = 1 + 3.5 * flow / max_new
+        ax.annotate('', xy=(xj, yj), xytext=(xi, yi),
+            arrowprops=dict(arrowstyle='->', color=color, lw=lw,
+                            connectionstyle='arc3,rad=0.08'),
+            transform=proj, zorder=5)
+        mx, my = (xi+xj)/2, (yi+yj)/2
+        ax.text(mx, my, f'{int(flow)}', fontsize=7, color=color,
+                ha='center', va='center', fontweight='bold',
+                bbox=dict(fc='white', ec='none', alpha=0.7, pad=1),
+                transform=proj, zorder=6)
+
+# New nodes
+for n in new_all_nodes:
+    if n not in NEW_NODE_POS:
+        continue
+    x, y = new_node_pos(n)
+    label = NEW_CITIES.get(n, str(n))
+    marker = 'D' if any(n in (i, j) for te in new_transit_load for i, j in te) else 'o'
+    ax.plot(x, y, marker=marker, markersize=8, color='#555555',
+            markeredgecolor='white', markeredgewidth=0.8,
             transform=proj, zorder=7)
+    ax.text(x, y + 0.25, label, fontsize=7, ha='center',
+            transform=proj, zorder=8)
 
 # Legend
 legend_handles = [
-    mpatches.Patch(color='#e05c2a', label='Transit node'),
-    mpatches.Patch(color='#aaaaaa', label='Waiting/charging node'),
-    plt.Line2D([0], [0], color='steelblue', lw=2, label='Truck flow (x_load)'),
+    plt.Line2D([0], [0], color=COMMODITY_COLORS[k], lw=2,
+               label=f'{COMMODITY_NAMES[k]}: x_load')
+    for k in range(3)
+] + [
+    plt.Line2D([0], [0], color=COMMODITY_COLORS[k], lw=1.5,
+               linestyle='dashed', alpha=0.5, label=f'{COMMODITY_NAMES[k]}: x_ener')
+    for k in range(3)
 ]
-ax.legend(handles=legend_handles, loc='upper right', fontsize=9)
-ax.set_title('Tri-city x_load flow  (number = trucks)', fontsize=12)
+ax.legend(handles=legend_handles, loc='upper right', fontsize=8)
+ax.set_title('Tri-city flows by commodity', fontsize=12)
 
 plt.tight_layout()
 plt.savefig('tri_city_flow.png', dpi=150, bbox_inches='tight')

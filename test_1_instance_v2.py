@@ -90,9 +90,9 @@ def test_constraints_and_demand_present():
 
     constr_names = [c.ConstrName for c in inst.model.getConstrs()]
 
-    for (src, sink), v in params['D'].items():
-        assert f"demand_{src}_src" in constr_names
-        assert f"demand_{sink}_dest" in constr_names
+    for k, ((src, sink), v) in enumerate(params['D'].items()):
+        assert f"demand_{src}_{k}_src" in constr_names
+        assert f"demand_{sink}_{k}_dest" in constr_names
 
     assert any(name.startswith('flow_bal_load[') or name.startswith('flow_bal_ener[') for name in constr_names)
 
