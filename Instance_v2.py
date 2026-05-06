@@ -133,7 +133,12 @@ class Instance:
         
 
     def __constr_end_cond_x(self, i):
-        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))))
+        if i not in self.param['sinks']:
+            min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
+        else:
+            min_charge = 0
+        min_charge = 0 # TODO resolve this hardcoded value 
+        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))))# if g >= min_charge)
         RHS = self.n[i] + sum(v for nodes, v in self.param['D'].items() if nodes[1] == i)
         self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']')
         
@@ -224,10 +229,10 @@ class Instance:
             for t in self.Ntl.times[i]:
                 self.__constr_chargecap(i, t)
  
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
-        self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes'] if i not in self.param.get('existing_charge_nodes', [])) <= self.param['N_chargers'], name='charger_limit')
-        self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['charge_nodes']) <= 0, name='charger_limit')
+        #self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
+        #self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
+        #self.model.addConstr(gp.quicksum(self.a[i] for i in self.param['charge_nodes'] if i not in self.param.get('existing_charge_nodes', [])) <= self.param['N_chargers'], name='charger_limit-1')
+        #self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['charge_nodes']) <= 0, name='charger_limit-2')
 
         for e in self.Ntl.Ntl.edges:
             self.__constr_edge(e)
@@ -426,7 +431,15 @@ class Instance:
                     M.optimize()
 
                     if M.status != gp.GRB.OPTIMAL:
-                        #if n_iter == 1: raise RuntimeError("Model is infeasible.")
+                        if n_iter == 1:
+                            M.computeIIS()
+                            M.write('my_iis.ilp')
+                            print("Irreducible Inconsistent Subsystem (IIS):")
+                            for c in M.getConstrs():
+                                if c.IISConstr:
+                                    print(f"Infeasible constraint: {c.ConstrName}")
+                            raise RuntimeError("Model is infeasible.")
+                         
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
                     if verbose:
@@ -614,6 +627,8 @@ class Instance:
         return equal
     
     def seed(self, soln):
+        #TODO this function is faulty
+        
         """
         Pre-populate self.Ntl.times and self.Ntl.charges from a prior solution's
         x_load flow dict, then completely rebuild the network and Gurobi model.

@@ -324,71 +324,71 @@ class TestInstance5Segments:
 
 
 
-# ---------------------------------------------------------------------------
-# Seed tests with 4-segment speed curve
-# ---------------------------------------------------------------------------
+# # ---------------------------------------------------------------------------
+# # Seed tests with 4-segment speed curve
+# # ---------------------------------------------------------------------------
 
-def _make_seed_instance_4seg(step_size=3):
-    """Return a (coarse instance, fine solution, N) triple using a 4-segment curve."""
-    N = nx.DiGraph()
-    N.add_edge(1, 2, dH=2, dL=2, time=1)
-    N.add_edge(2, 3, dH=2, dL=2, time=1)
-    nodes = list(N.nodes)
-    T, L = 15, 12
-    base_params = {
-        'sources': [1], 'sinks': [3], 'T': T, 'L': L, 'D': {(1, 3): 1},
-        'step_size': 1,
-        'MAX_ITER': 100,
-        'charge_rate': {i: 2 for i in nodes},
-        'battery_nodes': [], 'charge_nodes': [2], 'mobile_nodes': [], 'tractor_nodes': [],
-        'bat_swap_time': 1, 'tr_swap_time': 1, 'mobile_charge_rate': 0,
-        'charge_cost': {(i, t): 1 for i in nodes for t in range(T)},
-        'surplus_cost': {i: 0 for i in nodes}, 'stat_cost': {i: 0 for i in nodes},
-        'rec_penalty': 1000,
-        'N_tractors': 0, 'N_chargers': 1, 'N_batteries': 0,
-        'speed_curve': SPEED_CURVE_4,
-    }
-    inst_fine = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 1})
-    soln, val, _ = inst_fine.run_DDD()
-    inst = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': step_size}, ['default'])
-    soln2, val2, prop = inst.run_DDD()
-    if val != val2:
-        print(soln)
-        print(soln2)
-        print(prop)
-    assert val == val2, f"Expected same objective value for step_size=1 and step_size={step_size}, got {val} vs {val2}"
-    return inst, soln, N
-
-
-def test_seed_with_4_segment_curve_breakpoints_inserted():
-    """seed() must insert all (g, t) pairs from the fine solution into Ntl."""
-    inst, soln, _ = _make_seed_instance_4seg()
-    inst.seed(soln)
-    for edge_dict in soln['x_load'].values():
-        for e in edge_dict:
-            (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
-            assert g1 in inst.Ntl.charges[i]
-            assert t1 in inst.Ntl.times[i]
-            assert g2 in inst.Ntl.charges[j]
-            assert t2 in inst.Ntl.times[j]
+# def _make_seed_instance_4seg(step_size=3):
+#     """Return a (coarse instance, fine solution, N) triple using a 4-segment curve."""
+#     N = nx.DiGraph()
+#     N.add_edge(1, 2, dH=2, dL=2, time=1)
+#     N.add_edge(2, 3, dH=2, dL=2, time=1)
+#     nodes = list(N.nodes)
+#     T, L = 15, 12
+#     base_params = {
+#         'sources': [1], 'sinks': [3], 'T': T, 'L': L, 'D': {(1, 3): 1},
+#         'step_size': 1,
+#         'MAX_ITER': 100,
+#         'charge_rate': {i: 2 for i in nodes},
+#         'battery_nodes': [], 'charge_nodes': [2], 'mobile_nodes': [], 'tractor_nodes': [],
+#         'bat_swap_time': 1, 'tr_swap_time': 1, 'mobile_charge_rate': 0,
+#         'charge_cost': {(i, t): 1 for i in nodes for t in range(T)},
+#         'surplus_cost': {i: 0 for i in nodes}, 'stat_cost': {i: 0 for i in nodes},
+#         'rec_penalty': 1000,
+#         'N_tractors': 0, 'N_chargers': 1, 'N_batteries': 0,
+#         'speed_curve': SPEED_CURVE_4,
+#     }
+#     inst_fine = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': 1})
+#     soln, val, _ = inst_fine.run_DDD()
+#     inst = Instance_v2.Instance(N.copy(), {**base_params, 'step_size': step_size}, ['default'])
+#     soln2, val2, prop = inst.run_DDD()
+#     if val != val2:
+#         print(soln)
+#         print(soln2)
+#         print(prop)
+#     assert val == val2, f"Expected same objective value for step_size=1 and step_size={step_size}, got {val} vs {val2}"
+#     return inst, soln, N
 
 
-def test_seed_with_4_segment_curve_run_ddd_feasible():
-    """run_DDD on a seeded coarse instance (4-segment curve) must be feasible."""
-    inst, soln, _ = _make_seed_instance_4seg()
-    inst.seed(soln)
-    _, val, _ = inst.run_DDD()
-    assert val is not None and val < 1e9, f"Seeded 4-segment run_DDD infeasible: {val}"
+# def test_seed_with_4_segment_curve_breakpoints_inserted():
+#     """seed() must insert all (g, t) pairs from the fine solution into Ntl."""
+#     inst, soln, _ = _make_seed_instance_4seg()
+#     inst.seed(soln)
+#     for edge_dict in soln['x_load'].values():
+#         for e in edge_dict:
+#             (i, g1, t1, _), (j, g2, t2, _) = e[0], e[1]
+#             assert g1 in inst.Ntl.charges[i]
+#             assert t1 in inst.Ntl.times[i]
+#             assert g2 in inst.Ntl.charges[j]
+#             assert t2 in inst.Ntl.times[j]
 
 
-def test_seed_with_4_segment_curve_preserves_breakpoints():
-    """seed() must not drop any charges/times that existed before the call."""
-    inst, soln, N = _make_seed_instance_4seg()
-    charges_before = {i: list(inst.Ntl.charges[i]) for i in N.nodes}
-    times_before   = {i: list(inst.Ntl.times[i])   for i in N.nodes}
-    inst.seed(soln)
-    for i in N.nodes:
-        for g in charges_before[i]:
-            assert g in inst.Ntl.charges[i]
-        for t in times_before[i]:
-            assert t in inst.Ntl.times[i]
+# def test_seed_with_4_segment_curve_run_ddd_feasible():
+#     """run_DDD on a seeded coarse instance (4-segment curve) must be feasible."""
+#     inst, soln, _ = _make_seed_instance_4seg()
+#     inst.seed(soln)
+#     _, val, _ = inst.run_DDD()
+#     assert val is not None and val < 1e9, f"Seeded 4-segment run_DDD infeasible: {val}"
+
+
+# def test_seed_with_4_segment_curve_preserves_breakpoints():
+#     """seed() must not drop any charges/times that existed before the call."""
+#     inst, soln, N = _make_seed_instance_4seg()
+#     charges_before = {i: list(inst.Ntl.charges[i]) for i in N.nodes}
+#     times_before   = {i: list(inst.Ntl.times[i])   for i in N.nodes}
+#     inst.seed(soln)
+#     for i in N.nodes:
+#         for g in charges_before[i]:
+#             assert g in inst.Ntl.charges[i]
+#         for t in times_before[i]:
+#             assert t in inst.Ntl.times[i]

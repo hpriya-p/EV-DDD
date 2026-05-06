@@ -257,18 +257,18 @@ def commodity_flow_to_demand(x, hrs, market_share=0.1,):
 phx_sf = commodity_flow_to_demand(555.0 * 1000, 4)
 la_phx = commodity_flow_to_demand(2816.0 * 1000, 4)
 dal_phx = commodity_flow_to_demand(357.0 * 1000, 4)
-#sf_dal = commodity_flow_to_demand(354.0 * 1000, 6)
-#la_dal = commodity_flow_to_demand(1542.0 * 1000, 6)
-#la_sf = commodity_flow_to_demand(4568.0 * 1000, 6)
+sf_dal = commodity_flow_to_demand(354.0 * 1000, 4)
+la_dal = commodity_flow_to_demand(1542.0 * 1000, 4)
+la_sf = commodity_flow_to_demand(4568.0 * 1000, 4)
 T = 4 * 30 # unit: 15 minutes; 25 hrs to allow intermediate charging on LA-SF/PHX routes
 parameters = {
     'T': T, 
     'L': 100,
     'D': {(phx_idx, sf_idx): phx_sf, 
-    (la_idx, phx_idx): la_phx, #(la_idx, sf_idx): la_sf, 
-     (dal_idx, phx_idx): dal_phx},
-       #(la_idx, dal_idx): la_dal},
-        'step_size': 15,
+    #(la_idx, phx_idx): la_phx, (la_idx, sf_idx): la_sf, 
+     (dal_idx, phx_idx): dal_phx,
+    (la_idx, dal_idx): la_dal},
+        'step_size': 50,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
     'charge_nodes':  station_nodes,   
@@ -279,16 +279,16 @@ parameters = {
     'charge_rate': {i : N.nodes[i]['charger_rate']
                    for i in N.nodes},
     'charge_cost': {(i, t): 0.6 for i in N.nodes for t in range(T)},
-    'stat_cost': {i: 250000/(365*3) for i in N.nodes},
-    'surplus_cost': {i: 25000/(365*3) for i in N.nodes},
+    'stat_cost': {i: 250000/(365*5) for i in N.nodes},
+    'surplus_cost': {i: 25000/(365*5) for i in N.nodes},
     'N_tractors': np.inf,
     'N_batteries': 0,
     'N_chargers': np.inf,
     'speed_curve': speed_curve, # {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
     'bat_swap_time': 0,
     'tr_swap_time': 1, 
-    'sources': [la_idx, sf_idx, phx_idx, dal_idx],
-    'sinks':   [la_idx, sf_idx, phx_idx]
+    'sources': [la_idx, phx_idx, dal_idx],
+    'sinks':   [dal_idx, sf_idx, phx_idx]
 }
 
 instance = Instance_v2.Instance(N, parameters, ['heuristic'], seed=None)
