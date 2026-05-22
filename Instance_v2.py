@@ -53,7 +53,10 @@ class Instance:
 
         # init charge-time-augmented network
         self.Ntl = ChargeTimeNetwork(N, self.param, config)
-        print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
+        # control printing via self.verbose
+        self.verbose = self.param.get('verbose', True)
+        if self.verbose:
+            print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
         if seed is not None:
             self.seed(seed)
         if not network_only:
@@ -133,14 +136,17 @@ class Instance:
         
 
     def __constr_end_cond_x(self, i):
-        if i not in self.param['sinks']:
-            min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
-        else:
-            min_charge = 0
-        min_charge = 0 # TODO resolve this hardcoded value 
-        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))))# if g >= min_charge)
+        # constraint 1
+        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))))
         RHS = self.n[i] + sum(v for nodes, v in self.param['D'].items() if nodes[1] == i)
-        self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']')
+        self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']_1')
+
+        # constraint 2 on surplus tractors only
+
+        min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
+        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
+        RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
+        self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
         
 
 
@@ -209,11 +215,14 @@ class Instance:
            
         self.n = dict()
         self.a= dict()
+        self.z = dict()
         for i in self.N.nodes:
             if i in self.param['tractor_nodes']:
                 self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
+                self.z[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
             else:
                 self.n[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
+                self.z[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
             if i in self.param['charge_nodes']:
                 self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name='a[' + str(i) + ']')
             else:
@@ -250,8 +259,10 @@ class Instance:
                         for e in self.Ntl.Ntl.edges for k in range(self.K))
             + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])]
                           for e in self.Ntl.Ntl.edges for k in range(self.K) if self.Ntl.edge_charges[e] > 0)
-            + gp.quicksum(self.param['stat_cost'][i] * self.a[i] + self.param['surplus_cost'][i] * self.n[i]
-                          for i in self.N.nodes)
+            + gp.quicksum(self.param['stat_cost'][i] * self.a[i] for i in self.param['charge_nodes'])
+            + gp.quicksum(self.param['tractor_cost'] * self.n[i] for i in self.param['tractor_nodes'])
+            + gp.quicksum(self.param['battery_cost'] * self.n[i] for i in self.param['battery_nodes'])
+            + gp.quicksum(self.param['battery_cost'] * self.z[i] for i in self.param['tractor_nodes'])
         )
 
         if 'lagrange_multipliers' in self.param.keys():
@@ -319,7 +330,7 @@ class Instance:
 
         # 6. Update init/end condition constraints for affected original nodes
         for i in affected_i:
-            for name in [f'init_cond_x[{i}]', f'end_cond_x[{i}]']:
+            for name in [f'init_cond_x[{i}]', f'end_cond_x[{i}]_1', f'end_cond_x[{i}]_2']:
                 c = self.model.getConstrByName(name)
                 if c is not None:
                     self.model.remove(c)
@@ -383,7 +394,8 @@ class Instance:
     
 
     def resolve_infeasibility(self, LP_relax, verbose):
-        if verbose: print("Infeasible... recomputing full network")
+        if verbose and self.verbose:
+            print("Infeasible... recomputing full network")
         self.Ntl.construct()
         self.construct_model()
         M = self.model.relax() if LP_relax else self.model
@@ -392,12 +404,13 @@ class Instance:
         if M.status != gp.GRB.OPTIMAL:
             M.computeIIS()
             M.write('my_iis.ilp')
-            print("Irreducible Inconsistent Subsystem (IIS):")
-            for c in M.getConstrs():
-                if c.IISConstr:
-                    print(f"Infeasible constraint: {c.ConstrName}")
+            if self.verbose:
+                print("Irreducible Inconsistent Subsystem (IIS):")
+                for c in M.getConstrs():
+                    if c.IISConstr:
+                        print(f"Infeasible constraint: {c.ConstrName}")
             raise RuntimeError("Model is infeasible.")
-        if M.status == gp.GRB.OPTIMAL and verbose:
+        if M.status == gp.GRB.OPTIMAL and verbose and self.verbose:
             print("Solution found after full network recomputation!")
             
     
@@ -417,7 +430,7 @@ class Instance:
         _prev_sigterm = signal.signal(signal.SIGTERM, _sigterm_handler)
 
         try:
-            if verbose:
+            if verbose and self.verbose:
                 print("'''' LOGGING ''''")
             while n_iter < self.param['MAX_ITER']:
                 try:
@@ -434,15 +447,16 @@ class Instance:
                         if n_iter == 1:
                             M.computeIIS()
                             M.write('my_iis.ilp')
-                            print("Irreducible Inconsistent Subsystem (IIS):")
-                            for c in M.getConstrs():
-                                if c.IISConstr:
-                                    print(f"Infeasible constraint: {c.ConstrName}")
+                            if self.verbose:
+                                print("Irreducible Inconsistent Subsystem (IIS):")
+                                for c in M.getConstrs():
+                                    if c.IISConstr:
+                                        print(f"Infeasible constraint: {c.ConstrName}")
                             raise RuntimeError("Model is infeasible.")
                          
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
-                    if verbose:
+                    if verbose and self.verbose:
                         print("Iteration: ", n_iter)
                         print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
                         print("Obj Value: ", M.ObjVal)
@@ -455,23 +469,26 @@ class Instance:
 
                     assert curr_LB >= LB, "objective value too small"
                    
-                    print('a:', dict((k, v) for k, v in a_.items() if v > 0))
-                    print('n:', dict((k, v) for k, v in n_.items() if v > 0))
-                    try:
-                        print({i: self.N.nodes[i]['pos'] for i in self.N.nodes})
-                    except:
-                        pass
+                    if self.verbose:
+                        print('a:', dict((k, v) for k, v in a_.items() if v > 0))
+                        print('n:', dict((k, v) for k, v in n_.items() if v > 0))
+                        try:
+                            print({i: self.N.nodes[i]['pos'] for i in self.N.nodes})
+                        except:
+                            pass
 
                     corrected_flow = dict()
                     for k in range(self.K):
                         x_load_k = {key[0]: flow for key, flow in x_load.items() if key[1] == k and flow > 0}
                         x_ener_k = {key[0]: flow for  key, flow in x_ener.items() if key[1] == k and flow > 0}
-                        print(f'x_load_{k}:', x_load_k)
-                        print(f'x_ener_{k}:', x_ener_k)
+                        if self.verbose:
+                            print(f'x_load_{k}:', x_load_k)
+                            print(f'x_ener_{k}:', x_ener_k)
                         corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
                         new_edge, removed_edge = self.Ntl.update([x_load_k, x_ener_k])
 
-                        if verbose: print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
+                        if verbose and self.verbose:
+                            print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
 
                     iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
 
@@ -490,30 +507,33 @@ class Instance:
                             _interrupted = True
                             break
                         if model.ObjVal != curr_LB:
-                            print("Network was not fully computed, and has been reconstructed")
+                            if self.verbose:
+                                print("Network was not fully computed, and has been reconstructed")
                             continue
-                        if verbose:
+                        if verbose and self.verbose:
                             print("feasible solution found!")
                             print("'''''''''''''''''")
                         avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
                         avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
                         avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
-                        print(corrected_flow)
+                        if self.verbose:
+                            print(corrected_flow)
                         return {'x_load': {k: corrected_flow[k][0] for k in range(self.K)}, 'x_ener': {k: corrected_flow[k][1] for k in range(self.K)}, 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
                     else:
                         self.update_model(penalty=penalty)
 
 
-                    if verbose:
+                    if verbose and self.verbose:
                         print("Solution cannot be extended to a feasible solution, updating network...")
                          
                         for i in a_.keys():
-                            if a_[i] > 0:
+                            if a_[i] > 0 and self.verbose:
                                 print("a[", i, "] = ", a_[i])
                         for i in n_.keys():
-                            if n_[i] > 0:
+                            if n_[i] > 0 and self.verbose:
                                 print("n[", i, "] = ", n_[i])
-                        print("'''''''''''''''''")
+                        if self.verbose:
+                            print("'''''''''''''''''")
                     n_iter += 1
                     iter_times.append(time.time() - iter_start)
                 except KeyboardInterrupt:
@@ -593,7 +613,8 @@ class Instance:
 
         with open(filepath, 'w') as f:
             json.dump(snapshot, f, indent=2)
-        print(f"Instance snapshot written to {filepath}")
+        if self.verbose:
+            print(f"Instance snapshot written to {filepath}")
         return filepath
 
     def diff_models(self, old_model):
@@ -605,11 +626,13 @@ class Instance:
         if len(added_vars) > 0:
             equal = False
             l = min(len(added_vars), 10)
-            print("New variables added: ", list(added_vars)[:l])
+            if self.verbose:
+                print("New variables added: ", list(added_vars)[:l])
         if len(removed_vars) > 0:
             equal = False
             l = min(len(removed_vars), 10)
-            print("Variables removed: ", list(removed_vars)[:l])
+            if self.verbose:
+                print("Variables removed: ", list(removed_vars)[:l])
         if not equal:
             return False 
 
@@ -619,10 +642,12 @@ class Instance:
         removed_constrs = old_constrs - new_constrs
         if len(added_constrs) > 0:
             equal = False
-            print("New constraints added: ", added_constrs)
+            if self.verbose:
+                print("New constraints added: ", added_constrs)
         if len(removed_constrs) > 0:
             equal = False
-            print("Constraints removed: ", removed_constrs)
+            if self.verbose:
+                print("Constraints removed: ", removed_constrs)
 
         return equal
     
@@ -688,9 +713,10 @@ class Instance:
         
         if modified: 
             for i in self.N.nodes:
-                print(i)
-                print(self.Ntl.charges[i])
-                print(self.Ntl.times[i])
+                if self.verbose:
+                    print(i)
+                    print(self.Ntl.charges[i])
+                    print(self.Ntl.times[i])
             
         self.Ntl.construct()
         self.construct_model()

@@ -219,6 +219,8 @@ class ChargeTimeNetwork:
         self.Ntl = nx.MultiDiGraph()
         self.param = parameters
         self.config = config
+        # control printing
+        self.verbose = self.param.get('verbose', True)
         self.edge_types = dict()  # keys are edges ((i, j), \delta_g)
         self.edge_times = dict()
         self.edge_dists = dict()
@@ -253,31 +255,37 @@ class ChargeTimeNetwork:
         if self.charges != other.charges:
             diff = {i for i in set(self.charges) | set(other.charges) if self.charges.get(i) != other.charges.get(i)}
             l = min(len(diff), 10)
-            print(f"charges differ at nodes: {list(diff)[:l]}")
+            if self.verbose:
+                print(f"charges differ at nodes: {list(diff)[:l]}")
             equal = False
 
         if self.times != other.times:
             diff = {i for i in set(self.times) | set(other.times) if self.times.get(i) != other.times.get(i)}
             l = min(len(diff), 10)
-            print(f"times differ at nodes: {list(diff)[:l]}")
+            if self.verbose:
+                print(f"times differ at nodes: {list(diff)[:l]}")
             equal = False
 
         self_nodes = set(self.Ntl.nodes())
         other_nodes = set(other.Ntl.nodes())
         if self_nodes != other_nodes:
             l = min(len(self_nodes - other_nodes), 10) 
-            print(f"nodes only in self:  {list(self_nodes - other_nodes)[:l]}")
+            if self.verbose:
+                print(f"nodes only in self:  {list(self_nodes - other_nodes)[:l]}")
             l = min(len(other_nodes - self_nodes), 10)
-            print(f"nodes only in other: {list(other_nodes - self_nodes)[:l]}")
+            if self.verbose:
+                print(f"nodes only in other: {list(other_nodes - self_nodes)[:l]}")
             equal = False
 
         self_edges = set(self.Ntl.edges())
         other_edges = set(other.Ntl.edges())
         if self_edges != other_edges:
             l = min(len(self_edges - other_edges), 10) 
-            print(f"edges only in self:  {list(self_edges - other_edges)[:l]}")
+            if self.verbose:
+                print(f"edges only in self:  {list(self_edges - other_edges)[:l]}")
             l = min(len(other_edges - self_edges), 10)
-            print(f"edges only in other: {list(other_edges - self_edges)[:l]}")
+            if self.verbose:
+                print(f"edges only in other: {list(other_edges - self_edges)[:l]}")
             equal = False
 
         for attr in ('edge_types', 'edge_times', 'edge_dists', 'edge_charges'):
@@ -288,7 +296,8 @@ class ChargeTimeNetwork:
                 only_other = {k: other_attr[k] for k in other_attr if k not in self_attr or self_attr[k] != other_attr[k]}
                 l = min(len(only_self), 10)
                 l2 = min(len(only_other), 10)
-                print(f"{attr} differs — self only/changed: {list(only_self.items())[:l]}, other only/changed: {list(only_other.items())[:l2]}")
+                if self.verbose:
+                    print(f"{attr} differs — self only/changed: {list(only_self.items())[:l]}, other only/changed: {list(only_other.items())[:l2]}")
                 equal = False
 
         return equal
@@ -415,7 +424,8 @@ class ChargeTimeNetwork:
                 self.edge_dists[e]   = ed
 
     def refresh(self):
-        print("Recomputing edges for nodes: ", self.updated_since_refresh)
+        if self.verbose:
+            print("Recomputing edges for nodes: ", self.updated_since_refresh)
 
         # Step 1: Remove ALL edges incident to any network node (i, g, t, q)
         # where i is in updated_since_refresh (both outgoing and incoming).
@@ -441,7 +451,8 @@ class ChargeTimeNetwork:
         # Step 3: Re-add incoming transit edges from non-updated nodes.
         # add_single_edge skips edges that already exist (non-updated -> non-updated),
         # and freshly adds edges to updated nodes (removed in step 1 above).
-        print("Recomputing incoming transit edges from non-updated nodes")
+        if self.verbose:
+            print("Recomputing incoming transit edges from non-updated nodes")
         non_updated = [n for n in self.N.nodes if n not in self.updated_since_refresh]
         for i in tqdm(non_updated):
             for t in self.times[i]:
@@ -867,7 +878,8 @@ class ChargeTimeNetwork:
         for flow in lst_of_flows:
             for P, val in self.flow_decomposition(flow).items():
                 if val > 0:
-                    print(P)
+                    if self.verbose:
+                        print(P)
                     v1, v2, e_type, del_e = self.__update_P(P) 
                     if v1 is None:                            
                         continue # no new edges need to be added, so we are done with this path

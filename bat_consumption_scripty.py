@@ -150,26 +150,25 @@ stations = pd.read_csv("data/all_fuel_stations.csv")[['Latitude', 'Longitude']].
 elev_dict = get_elevation(stations, 0)
 
 # %%
-if COMPUTE_DISTANCE_MATRIX:
-    n = len(stations)
-    def process(i): 
-            try:
-                x = (np.round(stations[i][0], 6), np.round(stations[i][1], 6))
-                nbrs = [j for j in range(n) if abs(x[0] - stations[j][0]) <= 4 and abs(x[1] - stations[j][1]) <= 5]
-                res = []
-                for j in nbrs:
-                    if i == j:
-                        continue
-                    y = (np.round(stations[j][0], 6), np.round(stations[j][1], 6))
-                    val = get_data(x, y, elev_dict)
-                    res.append({'pt1': x, 'pt2': y, 'dist': val[0], 'time': val[1], 'bat': val[2]})
-                return res 
-            except:
-                print("ERROR: ", i)
-                return None
+n = len(stations)
+def process(i): 
+        try:
+            x = (np.round(stations[i][0], 6), np.round(stations[i][1], 6))
+            nbrs = [j for j in range(n) if abs(x[0] - stations[j][0]) <= 4 and abs(x[1] - stations[j][1]) <= 5]
+            res = []
+            for j in nbrs:
+                if i == j:
+                    continue
+                y = (np.round(stations[j][0], 6), np.round(stations[j][1], 6))
+                val = get_data(x, y, elev_dict)
+                res.append({'pt1': x, 'pt2': y, 'dist': val[0], 'time': val[1], 'bat': val[2]})
+            return res 
+        except:
+            print("ERROR: ", i)
+            return None
 
-    # Use joblib.Parallel with threading backend since tasks are IO-bound
-    results = Parallel(n_jobs=-1, backend='threading')(delayed(process)(i) for i in range(n))
-    records = [x for x in results if x is not None]
-    pd.DataFrame(records).to_csv("D_parallel_out.csv")
+# Use joblib.Parallel with threading backend since tasks are IO-bound
+results = Parallel(n_jobs=4, backend='threading')(delayed(process)(i) for i in tqdm.tqdm(range(n)))
+records = [x for x in results if x is not None]
+pd.DataFrame(records).to_csv("D_parallel_out.csv")
 
