@@ -1,2 +1,5 @@
-data/
-data/edges.txt
+__pycache__
+.claude
+.ipynb_checkpoints
+.pytest_cache
+
