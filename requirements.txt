@@ -1,0 +1,14 @@
+adjustText
+cartopy
+folium
+gurobipy
+joblib
+matplotlib
+networkx
+numpy
+pandas
+pymetis
+pytest
+requests
+routingpy
+tqdm
