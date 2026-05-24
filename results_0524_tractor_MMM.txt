@@ -1,0 +1,112 @@
+18 18
+[197, 282, 118, 153, 247, 137, 107, 225, 141, 11, 186, 126, 65, 30, 233, 236, 232, 167]
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 937859
+Academic license 937859 - for non-commercial use only - registered to hp___@cornell.edu
+Set parameter LogToConsole to value 1
+Set parameter TimeLimit to value 300
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Debian GNU/Linux 12 (bookworm)")
+
+CPU model: Intel(R) Xeon(R) CPU @ 2.20GHz, instruction set [SSE2|AVX|AVX2]
+Thread count: 2 physical cores, 4 logical processors, using up to 4 threads
+
+Non-default parameters:
+TimeLimit  300
+
+Academic license 937859 - for non-commercial use only - registered to hp___@cornell.edu
+Optimize a model with 489190 rows, 162783 columns and 1137532 nonzeros (Min)
+Model fingerprint: 0x78d9828a
+Model has 275 linear objective coefficients
+Variable types: 162504 continuous, 279 integer (279 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 1e+02]
+  Objective range  [1e+00, 1e+00]
+  Bounds range     [1e+00, 1e+02]
+  RHS range        [1e+00, 1e+02]
+
+Presolve removed 166996 rows and 10 columns
+Presolve time: 4.17s
+Presolved: 322194 rows, 162773 columns, 966036 nonzeros
+Variable types: 162498 continuous, 275 integer (275 binary)
+
+Deterministic concurrent LP optimizer: dual simplex and barrier
+Showing barrier log only...
+
+Root barrier log...
+
+Ordering time: 0.27s
+
+Barrier statistics:
+ Dense cols : 182
+ AA' NZ     : 4.681e+05
+ Factor NZ  : 9.182e+05 (roughly 80 MB of memory)
+ Factor Ops : 5.694e+07 (less than 1 second per iteration)
+ Threads    : 1
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0   2.02770466e+03 -6.32611801e+04  1.37e+01 1.81e-03  6.03e+00     8s
+   1   2.01471847e+03 -5.24612997e+04  6.36e+00 3.02e-14  1.38e+00     8s
+   2   3.66357961e+02 -3.54004440e+04  3.38e-01 1.95e-11  1.88e-01     8s
+   3   2.75105222e+02 -3.72902552e+03  1.66e-02 4.99e-12  1.64e-02     8s
+   4   2.71282364e+02 -1.94766723e+03  9.04e-03 2.26e-12  9.01e-03     8s
+   5   2.67961438e+02 -1.31105162e+03  6.01e-03 1.53e-12  6.39e-03     8s
+   6   2.53650319e+02 -9.14317455e+02  1.36e-03 1.09e-12  4.70e-03     8s
+   7   2.36363920e+02 -5.55119527e+02  4.94e-04 7.07e-13  3.18e-03     9s
+   8   2.17742731e+02 -3.51062323e+02  3.09e-04 4.84e-13  2.29e-03     9s
+   9   1.98671125e+02 -2.36315136e+02  2.31e-04 3.51e-13  1.75e-03     9s
+  10   1.73701374e+02 -1.73790710e+02  1.04e-04 2.73e-13  1.40e-03     9s
+  11   1.63870904e+02 -1.45552316e+02  8.43e-05 2.20e-13  1.24e-03     9s
+  12   1.21026655e+02 -5.79566077e+01  1.53e-05 1.30e-13  7.20e-04     9s
+  13   9.80000451e+01  9.06368859e+00  9.43e-06 4.95e-14  3.58e-04    10s
+  14   9.63770651e+01  4.77250997e+01  7.02e-06 1.87e-14  1.96e-04    10s
+  15   8.76994373e+01  6.57930747e+01  1.92e-06 1.78e-14  8.81e-05    10s
+  16   8.49040961e+01  7.64295809e+01  3.49e-07 1.24e-14  3.41e-05    10s
+  17   8.41165773e+01  8.30418617e+01  3.52e-08 2.13e-14  4.32e-06    10s
+  18   8.40019207e+01  8.39856832e+01  4.53e-11 1.51e-14  6.53e-08    10s
+  19   8.40000001e+01  8.39999998e+01  2.65e-12 9.95e-14  1.25e-12    11s
+  20   8.40000000e+01  8.40000000e+01  6.42e-11 7.11e-14  2.12e-17    11s
+
+Barrier solved model in 20 iterations and 10.66 seconds (4.61 work units)
+Optimal objective 8.40000000e+01
+
+
+Root crossover log...
+
+   15171 DPushes remaining with DInf 0.0000000e+00                11s
+       0 DPushes remaining with DInf 0.0000000e+00                11s
+
+   47351 PPushes remaining with PInf 0.0000000e+00                11s
+Crossover changed status from Optimal to Time Limit
+Concurrent spin time: 2.16s (can be avoided by choosing Method=3)
+
+Solved with dual simplex
+
+Root relaxation: objective 8.400000e+01, 6664 iterations, 6.47 seconds (2.21 work units)
+
+    Nodes    |    Current Node    |     Objective Bounds      |     Work
+ Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
+
+*    0     0               0      84.0000000   84.00000  0.00%     -   19s
+
+Explored 1 nodes (13644 simplex iterations) in 19.40 seconds (13.55 work units)
+Thread count was 4 (of 4 available processors)
+
+Solution count 1: 84 
+
+Optimal solution found (tolerance 1.00e-04)
+Best objective 8.400000000000e+01, best bound 8.400000000000e+01, gap 0.0000%
+D=100 → |S|=106, obj=84, status=2
+
+Maximum independent set size: 106
+(Out of 297 West Coast nodes)
+Num of charging stations 18
+Num of proxy stations 88
+Dallas closest node: (32.76662, -96.807086), distance: 0.9 miles
+Connected to PHX? True
+Connected to LA? True
+dH:   min=0.00  max=226.00  mean=78.44
+dL:   min=0.00  max=141.00  mean=49.15
+time: min=1.00  max=40.00  mean=15.62
+construct_parallel:   0%|          | 0/106 [00:00<?, ?it/s]construct_parallel:   1%|          | 1/106 [00:00<00:42,  2.49it/s]construct_parallel:   2%|▏         | 2/106 [00:00<00:28,  3.62it/s]construct_parallel:  12%|█▏        | 13/106 [00:00<00:03, 28.40it/s]construct_parallel:  18%|█▊        | 19/106 [00:00<00:02, 33.43it/s]construct_parallel:  23%|██▎       | 24/106 [00:01<00:03, 26.69it/s]construct_parallel:  32%|███▏      | 34/106 [00:01<00:01, 38.17it/s]construct_parallel:  37%|███▋      | 39/106 [00:01<00:01, 37.77it/s]construct_parallel:  42%|████▏     | 44/106 [00:01<00:02, 30.14it/s]construct_parallel:  45%|████▌     | 48/106 [00:01<00:01, 30.59it/s]construct_parallel:  51%|█████     | 54/106 [00:02<00:01, 27.19it/s]construct_parallel:  58%|█████▊    | 61/106 [00:02<00:01, 27.33it/s]construct_parallel:  61%|██████▏   | 65/106 [00:02<00:01, 27.98it/s]construct_parallel:  65%|██████▌   | 69/106 [00:02<00:01, 29.28it/s]construct_parallel:  69%|██████▉   | 73/106 [00:02<00:01, 28.52it/s]construct_parallel:  73%|███████▎  | 77/106 [00:02<00:01, 25.19it/s]construct_parallel:  86%|████████▌ | 91/106 [00:02<00:00, 47.52it/s]construct_parallel:  92%|█████████▏| 98/106 [00:03<00:00, 34.22it/s]construct_parallel: 100%|██████████| 106/106 [00:03<00:00, 41.45it/s]construct_parallel: 100%|██████████| 106/106 [00:03<00:00, 30.88it/s]

@@ -146,6 +146,8 @@ class Instance:
         min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
         LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
         RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
+        print(LHS)
+        print(RHS)
         self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
         
 
@@ -430,7 +432,7 @@ class Instance:
         _prev_sigterm = signal.signal(signal.SIGTERM, _sigterm_handler)
 
         try:
-            if verbose and self.verbose:
+            if self.verbose:
                 print("'''' LOGGING ''''")
             while n_iter < self.param['MAX_ITER']:
                 try:
@@ -465,6 +467,7 @@ class Instance:
                     x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
                     a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
                     n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
+                    z_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "z[" in v.VarName}
                     curr_LB = M.ObjVal
 
                     assert curr_LB >= LB, "objective value too small"
@@ -523,15 +526,18 @@ class Instance:
                         self.update_model(penalty=penalty)
 
 
-                    if verbose and self.verbose:
+                    if True:
                         print("Solution cannot be extended to a feasible solution, updating network...")
-                         
+                        print(corrected_flow)
                         for i in a_.keys():
                             if a_[i] > 0 and self.verbose:
                                 print("a[", i, "] = ", a_[i])
                         for i in n_.keys():
                             if n_[i] > 0 and self.verbose:
                                 print("n[", i, "] = ", n_[i])
+                        for i in z_.keys():
+                            if z_[i] > 0 and self.verbose:
+                                print("z[", i, "] = ", z_[i])
                         if self.verbose:
                             print("'''''''''''''''''")
                     n_iter += 1
