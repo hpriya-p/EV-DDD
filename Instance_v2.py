@@ -146,8 +146,6 @@ class Instance:
         min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
         LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
         RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
-        print(LHS)
-        print(RHS)
         self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
         
 
@@ -458,10 +456,10 @@ class Instance:
                          
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
-                    if verbose and self.verbose:
-                        print("Iteration: ", n_iter)
-                        print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
-                        print("Obj Value: ", M.ObjVal)
+                    
+                    print("Iteration: ", n_iter)
+                    print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
+                    print("Obj Value: ", M.ObjVal)
 
                     x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
                     x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}

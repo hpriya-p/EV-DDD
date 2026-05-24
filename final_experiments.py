@@ -416,7 +416,7 @@ sf_dal = commodity_flow_to_demand(354.0 * 1000, 4)
 la_dal = commodity_flow_to_demand(1542.0 * 1000, 4)
 la_sf = commodity_flow_to_demand(4568.0 * 1000, 4)
 upperbound = phx_sf + la_phx + dal_phx + sf_dal + la_dal + la_sf
-T = 4 * 30 # unit: 15 minutes; 25 hrs to allow intermediate charging on LA-SF/PHX routes
+T = 4 * 60 # unit: 15 minutes; 25 hrs to allow intermediate charging on LA-SF/PHX routes
 parameters = {
     'T': T, 
     'L': 100,

@@ -26,7 +26,7 @@ Coefficient statistics:
   RHS range        [1e+00, 1e+02]
 
 Presolve removed 166996 rows and 10 columns
-Presolve time: 4.17s
+Presolve time: 4.35s
 Presolved: 322194 rows, 162773 columns, 966036 nonzeros
 Variable types: 162498 continuous, 275 integer (275 binary)
 
@@ -35,7 +35,7 @@ Showing barrier log only...
 
 Root barrier log...
 
-Ordering time: 0.27s
+Ordering time: 0.26s
 
 Barrier statistics:
  Dense cols : 182
@@ -48,49 +48,49 @@ Barrier statistics:
 Iter       Primal          Dual         Primal    Dual     Compl     Time
    0   2.02770466e+03 -6.32611801e+04  1.37e+01 1.81e-03  6.03e+00     8s
    1   2.01471847e+03 -5.24612997e+04  6.36e+00 3.02e-14  1.38e+00     8s
-   2   3.66357961e+02 -3.54004440e+04  3.38e-01 1.95e-11  1.88e-01     8s
-   3   2.75105222e+02 -3.72902552e+03  1.66e-02 4.99e-12  1.64e-02     8s
-   4   2.71282364e+02 -1.94766723e+03  9.04e-03 2.26e-12  9.01e-03     8s
-   5   2.67961438e+02 -1.31105162e+03  6.01e-03 1.53e-12  6.39e-03     8s
-   6   2.53650319e+02 -9.14317455e+02  1.36e-03 1.09e-12  4.70e-03     8s
+   2   3.66357961e+02 -3.54004440e+04  3.38e-01 1.95e-11  1.88e-01     9s
+   3   2.75105222e+02 -3.72902552e+03  1.66e-02 4.99e-12  1.64e-02     9s
+   4   2.71282364e+02 -1.94766723e+03  9.04e-03 2.26e-12  9.01e-03     9s
+   5   2.67961438e+02 -1.31105162e+03  6.01e-03 1.53e-12  6.39e-03     9s
+   6   2.53650319e+02 -9.14317455e+02  1.36e-03 1.09e-12  4.70e-03     9s
    7   2.36363920e+02 -5.55119527e+02  4.94e-04 7.07e-13  3.18e-03     9s
-   8   2.17742731e+02 -3.51062323e+02  3.09e-04 4.84e-13  2.29e-03     9s
-   9   1.98671125e+02 -2.36315136e+02  2.31e-04 3.51e-13  1.75e-03     9s
-  10   1.73701374e+02 -1.73790710e+02  1.04e-04 2.73e-13  1.40e-03     9s
-  11   1.63870904e+02 -1.45552316e+02  8.43e-05 2.20e-13  1.24e-03     9s
-  12   1.21026655e+02 -5.79566077e+01  1.53e-05 1.30e-13  7.20e-04     9s
+   8   2.17742731e+02 -3.51062323e+02  3.09e-04 4.84e-13  2.29e-03    10s
+   9   1.98671125e+02 -2.36315136e+02  2.31e-04 3.51e-13  1.75e-03    10s
+  10   1.73701374e+02 -1.73790710e+02  1.04e-04 2.73e-13  1.40e-03    10s
+  11   1.63870904e+02 -1.45552316e+02  8.43e-05 2.20e-13  1.24e-03    10s
+  12   1.21026655e+02 -5.79566077e+01  1.53e-05 1.30e-13  7.20e-04    10s
   13   9.80000451e+01  9.06368859e+00  9.43e-06 4.95e-14  3.58e-04    10s
-  14   9.63770651e+01  4.77250997e+01  7.02e-06 1.87e-14  1.96e-04    10s
-  15   8.76994373e+01  6.57930747e+01  1.92e-06 1.78e-14  8.81e-05    10s
-  16   8.49040961e+01  7.64295809e+01  3.49e-07 1.24e-14  3.41e-05    10s
-  17   8.41165773e+01  8.30418617e+01  3.52e-08 2.13e-14  4.32e-06    10s
-  18   8.40019207e+01  8.39856832e+01  4.53e-11 1.51e-14  6.53e-08    10s
+  14   9.63770651e+01  4.77250997e+01  7.02e-06 1.87e-14  1.96e-04    11s
+  15   8.76994373e+01  6.57930747e+01  1.92e-06 1.78e-14  8.81e-05    11s
+  16   8.49040961e+01  7.64295809e+01  3.49e-07 1.24e-14  3.41e-05    11s
+  17   8.41165773e+01  8.30418617e+01  3.52e-08 2.13e-14  4.32e-06    11s
+  18   8.40019207e+01  8.39856832e+01  4.53e-11 1.51e-14  6.53e-08    11s
   19   8.40000001e+01  8.39999998e+01  2.65e-12 9.95e-14  1.25e-12    11s
   20   8.40000000e+01  8.40000000e+01  6.42e-11 7.11e-14  2.12e-17    11s
 
-Barrier solved model in 20 iterations and 10.66 seconds (4.61 work units)
+Barrier solved model in 20 iterations and 11.45 seconds (4.61 work units)
 Optimal objective 8.40000000e+01
 
 
 Root crossover log...
 
-   15171 DPushes remaining with DInf 0.0000000e+00                11s
-       0 DPushes remaining with DInf 0.0000000e+00                11s
+   15171 DPushes remaining with DInf 0.0000000e+00                12s
+       0 DPushes remaining with DInf 0.0000000e+00                12s
 
-   47351 PPushes remaining with PInf 0.0000000e+00                11s
+   47351 PPushes remaining with PInf 0.0000000e+00                12s
 Crossover changed status from Optimal to Time Limit
-Concurrent spin time: 2.16s (can be avoided by choosing Method=3)
+Concurrent spin time: 1.14s (can be avoided by choosing Method=3)
 
 Solved with dual simplex
 
-Root relaxation: objective 8.400000e+01, 6664 iterations, 6.47 seconds (2.21 work units)
+Root relaxation: objective 8.400000e+01, 6664 iterations, 7.30 seconds (2.21 work units)
 
     Nodes    |    Current Node    |     Objective Bounds      |     Work
  Expl Unexpl |  Obj  Depth IntInf | Incumbent    BestBd   Gap | It/Node Time
 
-*    0     0               0      84.0000000   84.00000  0.00%     -   19s
+*    0     0               0      84.0000000   84.00000  0.00%     -   20s
 
-Explored 1 nodes (13644 simplex iterations) in 19.40 seconds (13.55 work units)
+Explored 1 nodes (13644 simplex iterations) in 20.49 seconds (13.55 work units)
 Thread count was 4 (of 4 available processors)
 
 Solution count 1: 84 
@@ -109,4 +109,98 @@ Connected to LA? True
 dH:   min=0.00  max=226.00  mean=78.44
 dL:   min=0.00  max=141.00  mean=49.15
 time: min=1.00  max=40.00  mean=15.62
-construct_parallel:   0%|          | 0/106 [00:00<?, ?it/s]construct_parallel:   1%|          | 1/106 [00:00<00:42,  2.49it/s]construct_parallel:   2%|▏         | 2/106 [00:00<00:28,  3.62it/s]construct_parallel:  12%|█▏        | 13/106 [00:00<00:03, 28.40it/s]construct_parallel:  18%|█▊        | 19/106 [00:00<00:02, 33.43it/s]construct_parallel:  23%|██▎       | 24/106 [00:01<00:03, 26.69it/s]construct_parallel:  32%|███▏      | 34/106 [00:01<00:01, 38.17it/s]construct_parallel:  37%|███▋      | 39/106 [00:01<00:01, 37.77it/s]construct_parallel:  42%|████▏     | 44/106 [00:01<00:02, 30.14it/s]construct_parallel:  45%|████▌     | 48/106 [00:01<00:01, 30.59it/s]construct_parallel:  51%|█████     | 54/106 [00:02<00:01, 27.19it/s]construct_parallel:  58%|█████▊    | 61/106 [00:02<00:01, 27.33it/s]construct_parallel:  61%|██████▏   | 65/106 [00:02<00:01, 27.98it/s]construct_parallel:  65%|██████▌   | 69/106 [00:02<00:01, 29.28it/s]construct_parallel:  69%|██████▉   | 73/106 [00:02<00:01, 28.52it/s]construct_parallel:  73%|███████▎  | 77/106 [00:02<00:01, 25.19it/s]construct_parallel:  86%|████████▌ | 91/106 [00:02<00:00, 47.52it/s]construct_parallel:  92%|█████████▏| 98/106 [00:03<00:00, 34.22it/s]construct_parallel: 100%|██████████| 106/106 [00:03<00:00, 41.45it/s]construct_parallel: 100%|██████████| 106/106 [00:03<00:00, 30.88it/s]
+construct_parallel:   0%|          | 0/106 [00:00<?, ?it/s]construct_parallel:   1%|          | 1/106 [00:00<00:14,  7.25it/s]construct_parallel:   2%|▏         | 2/106 [00:00<00:37,  2.81it/s]construct_parallel:  11%|█▏        | 12/106 [00:00<00:04, 20.98it/s]construct_parallel:  16%|█▌        | 17/106 [00:01<00:05, 16.95it/s]construct_parallel:  20%|█▉        | 21/106 [00:01<00:04, 17.41it/s]construct_parallel:  23%|██▎       | 24/106 [00:01<00:05, 13.68it/s]construct_parallel:  29%|██▉       | 31/106 [00:01<00:03, 19.52it/s]construct_parallel:  34%|███▍      | 36/106 [00:02<00:03, 21.53it/s]construct_parallel:  37%|███▋      | 39/106 [00:02<00:03, 17.14it/s]construct_parallel:  40%|███▉      | 42/106 [00:02<00:05, 12.31it/s]construct_parallel:  44%|████▍     | 47/106 [00:02<00:03, 16.38it/s]construct_parallel:  51%|█████     | 54/106 [00:03<00:04, 12.40it/s]construct_parallel:  58%|█████▊    | 61/106 [00:04<00:03, 13.47it/s]construct_parallel:  60%|██████    | 64/106 [00:04<00:03, 12.80it/s]construct_parallel:  63%|██████▎   | 67/106 [00:04<00:02, 13.12it/s]construct_parallel:  69%|██████▉   | 73/106 [00:04<00:01, 17.62it/s]construct_parallel:  72%|███████▏  | 76/106 [00:04<00:01, 17.54it/s]construct_parallel:  75%|███████▍  | 79/106 [00:05<00:02, 12.36it/s]construct_parallel:  87%|████████▋ | 92/106 [00:06<00:00, 16.17it/s]construct_parallel:  96%|█████████▌| 102/106 [00:06<00:00, 23.16it/s]construct_parallel: 100%|██████████| 106/106 [00:06<00:00, 22.90it/s]construct_parallel: 100%|██████████| 106/106 [00:06<00:00, 16.50it/s]
+Set parameter MIPGap to value 0.05
+{(56, 69): 1, (90, 56): 1, (91, 90): 5}
+Gurobi Optimizer version 13.0.2 build v13.0.2rc1 (linux64 - "Debian GNU/Linux 12 (bookworm)")
+
+CPU model: Intel(R) Xeon(R) CPU @ 2.20GHz, instruction set [SSE2|AVX|AVX2]
+Thread count: 2 physical cores, 4 logical processors, using up to 4 threads
+
+Non-default parameters:
+MIPGap  0.05
+
+Academic license 937859 - for non-commercial use only - registered to hp___@cornell.edu
+Optimize a model with 2556583 rows, 5094792 columns and 13194899 nonzeros (Min)
+Model fingerprint: 0x72d34405
+Model has 3536846 linear objective coefficients
+Variable types: 0 continuous, 5094792 integer (106 binary)
+Coefficient statistics:
+  Matrix range     [1e+00, 3e+05]
+  Objective range  [6e-01, 1e+03]
+  Bounds range     [1e+00, 1e+00]
+  RHS range        [1e+00, 5e+00]
+
+Presolve removed 652 rows and 1097 columns (presolve time = 5s)...
+Presolve removed 1989636 rows and 2319191 columns (presolve time = 10s)...
+Presolve removed 1989636 rows and 2394911 columns (presolve time = 16s)...
+Presolve removed 2005419 rows and 2410746 columns (presolve time = 20s)...
+Presolve removed 2046292 rows and 2752251 columns (presolve time = 25s)...
+Presolve removed 2048848 rows and 2769223 columns (presolve time = 30s)...
+Presolve removed 2069458 rows and 2790223 columns
+Presolve time: 33.42s
+Presolved: 487125 rows, 2304569 columns, 5440713 nonzeros
+Variable types: 0 continuous, 2304569 integer (158 binary)
+Performing another presolve...
+Presolve removed 0 rows and 49788 columns (presolve time = 5s)...
+Presolve removed 12234 rows and 80082 columns (presolve time = 10s)...
+Presolve removed 12933 rows and 85384 columns (presolve time = 15s)...
+Presolve removed 13767 rows and 88837 columns (presolve time = 20s)...
+Presolve removed 13827 rows and 98960 columns (presolve time = 25s)...
+Presolve removed 13827 rows and 98960 columns (presolve time = 30s)...
+Presolve removed 13827 rows and 98960 columns
+Presolve time: 33.90s
+Deterministic concurrent LP optimizer: dual simplex and barrier
+Showing barrier log only...
+
+Root barrier log...
+
+Elapsed ordering time = 5s
+Elapsed ordering time = 10s
+Elapsed ordering time = 12s
+Elapsed ordering time = 15s
+Elapsed ordering time = 20s
+Elapsed ordering time = 21s
+Elapsed ordering time = 25s
+Elapsed ordering time = 30s
+Elapsed ordering time = 30s
+Elapsed ordering time = 35s
+Elapsed ordering time = 38s
+Elapsed ordering time = 40s
+Elapsed ordering time = 45s
+Ordering time: 46.31s
+
+Barrier statistics:
+ Free vars  : 3435
+ AA' NZ     : 2.724e+06
+ Factor NZ  : 1.150e+08 (roughly 1.8 GB of memory)
+ Factor Ops : 2.977e+11 (roughly 13 seconds per iteration)
+ Threads    : 1
+
+                  Objective                Residual
+Iter       Primal          Dual         Primal    Dual     Compl     Time
+   0   5.92419157e+16 -3.93697577e+15  3.81e+12 6.75e+01  2.05e+12   160s
+   1   4.33018053e+16 -3.29983900e+15  2.38e+12 2.11e+03  1.34e+12   170s
+   2   3.68735450e+16 -2.99161101e+15  1.82e+12 1.80e+03  1.09e+12   181s
+   3   2.75094030e+16 -2.69684450e+15  1.09e+12 1.55e+03  7.88e+11   191s
+   4   2.10200904e+16 -1.93395431e+15  6.85e+11 9.66e+02  4.96e+11   208s
+   5   1.37439198e+16 -1.34663100e+15  3.44e+11 6.24e+02  2.83e+11   227s
+   6   8.02790495e+15 -8.48848176e+14  1.23e+11 3.62e+02  1.24e+11   246s
+   7   4.85695714e+15 -3.96296809e+14  3.93e+10 1.47e+02  4.53e+10   263s
+   8   2.47089904e+15 -1.47177805e+14  7.32e+09 1.82e+02  1.04e+10   280s
+   9   1.18903669e+15 -4.34499473e+13  1.40e+09 4.69e+01  2.38e+09   297s
+
+Barrier performed 9 iterations in 300.31 seconds (178.67 work units)
+Barrier solve interrupted - model solved by another algorithm
+
+Concurrent spin time: 0.09s
+
+Solved with dual simplex
+
+Root simplex log...
+
+Iteration    Objective       Primal Inf.    Dual Inf.      Time
+   44468    5.7998454e+03   0.000000e+00   0.000000e+00    301s
+
+Root relaxation: objective 5.799845e+03, 44468 iterations, 211.49 seconds (91.17 work units)
+Total elapsed time = 301.46s (DegenMoves)
