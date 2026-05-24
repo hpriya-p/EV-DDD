@@ -23,7 +23,8 @@ GENERATE_HEATMAP_EDGES = False
 GENERATE_HEATMAP_PATHS = True
 COMPUTE_DISTANCE_MATRIX = True 
 COMPUTE_STATION_DF = False 
-
+FULL_WEIGHT = 24493.988 #kg, weight of tesla model 3
+EMPTY_WEIGHT =11339.809 #kg
 # %% [markdown]
 # # Query information from Open Street Maps API
 
@@ -39,11 +40,10 @@ def query_wrapper(orig, dest, invert=True):
 query_wrapper((42.393167, -71.064352),(40.718037, -73.932309))
 
 # %%
-def bat_consumption(dist, time, start_elev_m, end_elev_m, start_speed, end_speed):
+def bat_consumption(dist, time, start_elev_m, end_elev_m, start_speed, end_speed, m=FULL_WEIGHT):
     # To compute the reduction in SOC from this output: if X (Joules) returned,
     # X * (2.7778 x 10^-7 J/kwh)/(battery capacity in kwh)
     
-    m = 24493.988 #kg
     Af = 3.825 #m^2
     Cpi = 0.011
     Cd = 0.9
@@ -104,7 +104,7 @@ def get_elevation(locations, starting_j=0):
 
     return elevation_dict
 
-def get_data(orig, dest, elev):
+def get_data(orig, dest, elev, weight=FULL_WEIGHT):
     try:
         P = query_wrapper(orig, dest)
         time.sleep(1)
@@ -129,7 +129,7 @@ def get_data(orig, dest, elev):
     v1 = last_step.distance/last_step.duration
     
     
-    return P.distance, P.duration, bat_consumption(P.distance, P.duration, elev[orig], elev[dest], v0, v1)
+    return P.distance, P.duration, bat_consumption(P.distance, P.duration, elev[orig], elev[dest], v0, v1, m=weight)
     
 
 
@@ -160,8 +160,9 @@ def process(i):
                 if i == j:
                     continue
                 y = (np.round(stations[j][0], 6), np.round(stations[j][1], 6))
-                val = get_data(x, y, elev_dict)
-                res.append({'pt1': x, 'pt2': y, 'dist': val[0], 'time': val[1], 'bat': val[2]})
+                val_H = get_data(x, y, elev_dict, weight=FULL_WEIGHT)
+                val_L = get_data(x, y, elev_dict, weight=EMPTY_WEIGHT)
+                res.append({'pt1': x, 'pt2': y, 'dist': val_H[0], 'time': val_H[1], 'bat_H': val_H[2], 'bat_L': val_L[2]})
             return res 
         except:
             print("ERROR: ", i)
