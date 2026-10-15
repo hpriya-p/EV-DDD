@@ -142,11 +142,11 @@ class Instance:
         self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']_1')
 
         # constraint 2 on surplus tractors only
-
-        min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
-        LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
-        RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
-        self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
+        if i in self.param['tractor_nodes']:
+            min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
+            LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
+            RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
+            self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
         
 
 
@@ -217,9 +217,10 @@ class Instance:
         self.a= dict()
         self.z = dict()
         for i in self.N.nodes:
-            if i in self.param['tractor_nodes']:
+            if i in self.param['tractor_nodes'] or i in self.param['battery_nodes']:
                 self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
-                self.z[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
+                if i in self.param['tractor_nodes']: 
+                    self.z[i] = self.model.addVar(lb = 0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
             else:
                 self.n[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
                 self.z[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
@@ -400,8 +401,10 @@ class Instance:
         self.construct_model()
         M = self.model.relax() if LP_relax else self.model
         M.optimize()
-                   
+
         if M.status != gp.GRB.OPTIMAL:
+            # Use a time limit for IIS to avoid hanging on large models
+            M.Params.IISMethod = 1
             M.computeIIS()
             M.write('my_iis.ilp')
             if self.verbose:
@@ -444,16 +447,6 @@ class Instance:
                     M.optimize()
 
                     if M.status != gp.GRB.OPTIMAL:
-                        if n_iter == 1:
-                            M.computeIIS()
-                            M.write('my_iis.ilp')
-                            if self.verbose:
-                                print("Irreducible Inconsistent Subsystem (IIS):")
-                                for c in M.getConstrs():
-                                    if c.IISConstr:
-                                        print(f"Infeasible constraint: {c.ConstrName}")
-                            raise RuntimeError("Model is infeasible.")
-                         
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
                     
@@ -479,14 +472,20 @@ class Instance:
                             pass
 
                     corrected_flow = dict()
+                    x_loads = dict()
+                    x_eners = dict()
                     for k in range(self.K):
                         x_load_k = {key[0]: flow for key, flow in x_load.items() if key[1] == k and flow > 0}
                         x_ener_k = {key[0]: flow for  key, flow in x_ener.items() if key[1] == k and flow > 0}
                         if self.verbose:
                             print(f'x_load_{k}:', x_load_k)
                             print(f'x_ener_{k}:', x_ener_k)
+                        x_loads[k] = x_load_k
+                        x_eners[k] = x_ener_k
                         corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
-                        new_edge, removed_edge = self.Ntl.update([x_load_k, x_ener_k])
+                    
+                    for k in range(self.K):
+                        new_edge, removed_edge = self.Ntl.update([x_loads[k], x_eners[k]])
 
                         if verbose and self.verbose:
                             print("New edge added: ", new_edge, " Edge removed: ", removed_edge)

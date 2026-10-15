@@ -50,7 +50,7 @@ speed_curve ={0: {'speed': 3600 * 1/(35*3.6), 'minbat': 0, 'maxbat': 10},
 # Other parameters
 BAT_FROM_TIME = 3600 * 1000 * .75 # battery consumption = (3600 * 1000 * .8) * (time in hrs)
 
-DISTANCE_THRESHOLD = 0  # miles
+DISTANCE_THRESHOLD = 10  # miles
 EDGE_THRESHOLD = 300  # miles - max edge length for connectivity
 
 SF_COORDS = (37.7749, -122.4194)

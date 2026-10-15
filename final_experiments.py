@@ -409,13 +409,15 @@ def commodity_flow_to_demand(x, hrs, market_share=0.1,):
     ev_trucks_per_hour = ev_trucks_per_day / 24
     return int(ev_trucks_per_hour * hrs)
 
-phx_sf = commodity_flow_to_demand(555.0 * 1000, 4)
+phx_sf = commodity_flow_to_demand(555.0 * 1000, 4, 0)
 la_phx = commodity_flow_to_demand(2816.0 * 1000, 4)
 dal_phx = commodity_flow_to_demand(357.0 * 1000, 4)
 sf_dal = commodity_flow_to_demand(354.0 * 1000, 4)
 la_dal = commodity_flow_to_demand(1542.0 * 1000, 4)
 la_sf = commodity_flow_to_demand(4568.0 * 1000, 4)
 upperbound = phx_sf + la_phx + dal_phx + sf_dal + la_dal + la_sf
+# lst is nodes in N.nodes that are west of phoenix
+west_of_phoenix = [n for n in N.nodes if n not in station_nodes and is_west_of_phoenix(N.nodes[n]['pos'][0], N.nodes[n]['pos'][1])]
 T = 4 * 60 # unit: 15 minutes; 25 hrs to allow intermediate charging on LA-SF/PHX routes
 parameters = {
     'T': T, 
@@ -427,23 +429,23 @@ parameters = {
         'step_size': 50,
     'MAX_ITER': 1000,
     'value_for_time': 27/4, # units are 15 minutes
-    'charge_nodes':  station_nodes,   
+    'charge_nodes':  station_nodes + [i for i in N.nodes if  i not in west_of_phoenix], # all nodes can charge, but station nodes have higher rates
      'existing_charge_nodes': station_nodes,
-    'battery_nodes': [],
-    'tractor_nodes': [i for i in N.nodes if i not in station_nodes],
+    'tractor_nodes': [],
+    'battery_nodes': west_of_phoenix,
     'mobile_nodes': [],
     'charge_rate': {i : N.nodes[i]['charger_rate']
                    for i in N.nodes},
     'charge_cost': {(i, t): 0.6 for i in N.nodes for t in range(T)},
     'stat_cost': {i: 250000/(365*5) for i in N.nodes},
-    'surplus_cost': {i: 25000/(365*5) for i in N.nodes},
+    'surplus_cost': {i: 15000/(365*5) for i in N.nodes},
     'tractor_cost':  25000/(365*5),
     'battery_cost': 15000/(365*5), 
-    'N_tractors': 10 * upperbound,
-    'N_batteries': 0,
+    'N_tractors': 0 * upperbound,
+    'N_batteries': 10 * upperbound,
     'N_chargers': 10 * upperbound,
     'speed_curve': speed_curve, # {0: {'speed': 67/(2.5 * 4), 'minbat': 0, 'maxbat': 100}},
-    'bat_swap_time': 0,
+    'bat_swap_time': 1,
     'tr_swap_time': 1, 
     'sources': [la_idx, phx_idx, dal_idx],
     'sinks':   [dal_idx, sf_idx, phx_idx],
