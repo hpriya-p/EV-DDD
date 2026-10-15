@@ -9,6 +9,36 @@ import datetime
 
 PEN_CONST = 10**6
 
+
+def _jsonable(obj):
+    """Recursively make obj JSON-serializable, stringifying unsupported types and tuple keys."""
+    if isinstance(obj, dict):
+        return {str(k): _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonable(x) for x in obj]
+    if isinstance(obj, (bool, type(None))):
+        return obj
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, (int, float, str)):
+        return obj
+    return str(obj)
+
+
+def read_ddd_log(filepath):
+    """Load a log written by Instance.solve (see the 'ddd_log' parameter).
+
+    Returns a list of records, one per line:
+      {'event': 'start', ...}       run settings
+      {'event': 'iteration', ...}   one per relaxation solved
+      {'event': 'final', ...}       last record; holds the solution if DDD converged
+    """
+    with open(filepath) as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 class Instance:
     def __init__(self, N, parameters, config=['heuristic'], network_only=False, seed=None):
         # parameters dict keys (includes all ChargeTimeNetwork keys, plus):
@@ -36,6 +66,9 @@ class Instance:
         #   MAX_ITER      (int)   – maximum number of column-generation / update iterations
         #   lagrange_multipliers (dict) – (optional) {'load': {edge: mu}, 'ener': {edge: mu}};
         #                                 Lagrange multipliers subtracted from the objective
+        #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
+        #                           one record per DDD iteration and a final record with the
+        #                           solution; read it back with read_ddd_log
         self.N = N
         self.param = parameters
         self.model = gp.Model() 
@@ -418,6 +451,31 @@ class Instance:
             
     
            
+    @staticmethod
+    def _objective_bound(M):
+        """Proven lower bound of the solved relaxation.
+
+        Each relaxation MIP is solved only to MIPGap, so ObjVal can exceed the
+        relaxation optimum; ObjBound cannot. An LP has no ObjBound, but its
+        optimal ObjVal is exact.
+        """
+        try:
+            return M.ObjBound
+        except (gp.GurobiError, AttributeError):
+            return M.ObjVal
+
+    def _log_ddd(self, record, mode='a'):
+        """Append one JSON record to self.param['ddd_log'], if set.
+
+        The file is reopened for every record so that everything up to the
+        last finished iteration is on disk even if the process is killed.
+        """
+        path = self.param.get('ddd_log')
+        if not path:
+            return
+        with open(path, mode) as f:
+            f.write(json.dumps(_jsonable(record)) + '\n')
+
     def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
         n_iter = 1
         curr_LB = 0
@@ -431,6 +489,15 @@ class Instance:
             raise KeyboardInterrupt(f"signal {signum} received")
 
         _prev_sigterm = signal.signal(signal.SIGTERM, _sigterm_handler)
+
+        solve_start = time.time()
+        last_bound = None
+        self._log_ddd({'event': 'start',
+                       'started': datetime.datetime.now().isoformat(timespec='seconds'),
+                       'config': self.config, 'LP_relax': LP_relax,
+                       'T': self.param['T'], 'L': self.param['L'],
+                       'step_size': self.param['step_size'], 'MAX_ITER': self.param['MAX_ITER']},
+                      mode='w')
 
         try:
             if self.verbose:
@@ -460,6 +527,15 @@ class Instance:
                     n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
                     z_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "z[" in v.VarName}
                     curr_LB = M.ObjVal
+                    last_bound = self._objective_bound(M)
+                    # Discretization and size of the network this relaxation was solved on
+                    # (before update() refines it for the next iteration).
+                    self._log_ddd({'event': 'iteration', 'iteration': n_iter,
+                                   'lower_bound': last_bound, 'objective': M.ObjVal,
+                                   'num_edges': len(self.Ntl.Ntl.edges),
+                                   'num_nodes': len(self.Ntl.Ntl.nodes),
+                                   'elapsed': time.time() - solve_start,
+                                   'times': self.Ntl.times, 'charges': self.Ntl.charges})
 
                     assert curr_LB >= LB, "objective value too small"
                    
@@ -518,7 +594,14 @@ class Instance:
                         avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
                         if self.verbose:
                             print(corrected_flow)
-                        return {'x_load': {k: corrected_flow[k][0] for k in range(self.K)}, 'x_ener': {k: corrected_flow[k][1] for k in range(self.K)}, 'a': a_, 'n':n_}, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+                        soln = {'x_load': {k: corrected_flow[k][0] for k in range(self.K)}, 'x_ener': {k: corrected_flow[k][1] for k in range(self.K)}, 'a': a_, 'n':n_}
+                        self._log_ddd({'event': 'final', 'status': 'converged', 'iteration': n_iter,
+                                       'objective': M.ObjVal, 'lower_bound': last_bound,
+                                       'num_edges': len(self.Ntl.Ntl.edges),
+                                       'elapsed': time.time() - solve_start,
+                                       'times': self.Ntl.times, 'charges': self.Ntl.charges,
+                                       'solution': dict(soln, z=z_)})
+                        return soln, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
                     else:
                         self.update_model(penalty=penalty)
 
@@ -547,6 +630,10 @@ class Instance:
             if _interrupted:
                 self.dump_to_json()
 
+        self._log_ddd({'event': 'final', 'status': 'interrupted' if _interrupted else 'max_iter',
+                       'iteration': n_iter, 'objective': curr_LB, 'lower_bound': last_bound,
+                       'num_edges': len(self.Ntl.Ntl.edges),
+                       'elapsed': time.time() - solve_start, 'solution': None})
         avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
         avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
         avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
@@ -579,38 +666,22 @@ class Instance:
             ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
             filepath = f'instance_snapshot_{ts}.json'
 
-        def _safe(obj):
-            """Recursively make obj JSON-serializable, stringifying unsupported types."""
-            if isinstance(obj, dict):
-                return {str(k): _safe(v) for k, v in obj.items()}
-            if isinstance(obj, (list, tuple)):
-                return [_safe(x) for x in obj]
-            if isinstance(obj, (bool, type(None))):
-                return obj
-            if isinstance(obj, np.integer):
-                return int(obj)
-            if isinstance(obj, np.floating):
-                return float(obj)
-            if isinstance(obj, (int, float, str)):
-                return obj
-            return str(obj)
-
         graph_data = {
             'nodes': [str(n) for n in self.Ntl.Ntl.nodes()],
             'edges': [
                 {'u': str(u), 'v': str(v), 'key': k}
                 for u, v, k in self.Ntl.Ntl.edges(keys=True)
             ],
-            'edge_types':   {str(e): _safe(v) for e, v in self.Ntl.edge_types.items()},
-            'edge_times':   {str(e): _safe(v) for e, v in self.Ntl.edge_times.items()},
-            'edge_dists':   {str(e): _safe(v) for e, v in self.Ntl.edge_dists.items()},
-            'edge_charges': {str(e): _safe(v) for e, v in self.Ntl.edge_charges.items()},
-            'charges':      _safe(self.Ntl.charges),
-            'times':        _safe(self.Ntl.times),
+            'edge_types':   {str(e): _jsonable(v) for e, v in self.Ntl.edge_types.items()},
+            'edge_times':   {str(e): _jsonable(v) for e, v in self.Ntl.edge_times.items()},
+            'edge_dists':   {str(e): _jsonable(v) for e, v in self.Ntl.edge_dists.items()},
+            'edge_charges': {str(e): _jsonable(v) for e, v in self.Ntl.edge_charges.items()},
+            'charges':      _jsonable(self.Ntl.charges),
+            'times':        _jsonable(self.Ntl.times),
         }
 
         snapshot = {
-            'param': _safe(self.param),
+            'param': _jsonable(self.param),
             'graph': graph_data,
         }
 
