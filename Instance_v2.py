@@ -81,7 +81,7 @@ class Instance:
         if 'min_time' not in self.param.keys():
             self.param['min_time'] = 0
         # upate config
-        if len(set(self.config) & set(['smart_update', 'simple_update', 'simple_w_incoming_update'])) == 0:
+        if len(set(self.config) & set(['smart_update', 'simple_update', 'simple_w_incoming_update', 'local_rebuild_update'])) == 0:
             self.config = [x for x in self.config] + ['simple_w_incoming_update']
 
         # init charge-time-augmented network

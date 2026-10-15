@@ -874,7 +874,11 @@ class ChargeTimeNetwork:
 
         Two options: 'smart update' tries to update multiple edges that may be affected
         'simple update' (default) updates only the first edge it finds that is not in the network
+        A third, 'local_rebuild_update', makes the network exactly the DDD network of the
+        refined discretization (see __update_local_rebuild).
         """
+        if 'local_rebuild_update' in self.config:
+            return self.__update_local_rebuild(lst_of_flows)
         for flow in lst_of_flows:
             for P, val in self.flow_decomposition(flow).items():
                 if val > 0:
@@ -888,7 +892,8 @@ class ChargeTimeNetwork:
                     if 'simple_w_incoming_update' in self.config and v1 not in self.Ntl.nodes:
                         self.add_incoming_edges(v1)
                     new_e = self.add_single_edge(v1, v2, e_type)
-                    self.correct_edge(del_e[0], del_e[1])
+                    if del_e is not None:
+                        self.correct_edge(del_e[0], del_e[1])
 
                     if new_e is not None:
                         # new edge has already been added. We are done if 'simple_update' option is used
@@ -915,7 +920,8 @@ class ChargeTimeNetwork:
         actual_path, edge_types, edge_map, status = self.convert_actual_path(P)
 
         for e in actual_path:
-            if e not in self.Ntl.edges:
+            # has_edge matches any key; `e in self.Ntl.edges` with a 2-tuple only finds key 0
+            if not self.Ntl.has_edge(*e):
                 v1, v2 = e
                 i, g1, t1, q1 = v1
                 j, g2, t2, q2 = v2
@@ -936,10 +942,113 @@ class ChargeTimeNetwork:
                     self.times[j].sort()
                     self.updated_since_refresh.add(j)
 
-               
-                return v1, v2, edge_types[e], edge_map[e]
+
+                # convert_actual_path appends a closing wait edge that has no entry in
+                # edge_map, so there may be no network edge to correct.
+                return v1, v2, edge_types[e], edge_map.get(e)
 
         return None, None, None, None
+
+    def __update_local_rebuild(self, lst_of_flows):
+        """
+        Refine the discretization exactly as the simple update does (endpoints of the
+        first edge of a solution path that is missing from the network), then make the
+        network equal to the one construct() would build for the new charges/times.
+
+        Only the outgoing edges of stations whose charges or times changed, and of
+        their neighbours in N, can differ from construct(): every arc into a station
+        starts at the station itself or at a neighbour. Those edges are recomputed
+        with _compute_node_edges, the routine construct() uses.
+
+        Returns (new edge, edge it replaces) like update(), or (None, None) when no
+        solution path needs refining.
+        """
+        before = {i: (len(self.charges[i]), len(self.times[i])) for i in self.N.nodes}
+        refined = None
+        for flow in lst_of_flows:
+            for P, val in self.flow_decomposition(flow).items():
+                if val > 0:
+                    v1, v2, e_type, del_e = self.__update_P(P)
+                    if v1 is not None:
+                        refined = (v1, v2, e_type, del_e)
+                        break
+            if refined is not None:
+                break
+        if refined is None:
+            return None, None
+
+        # charges/times only ever grow, so a length change means new points
+        changed = {i for i in self.N.nodes
+                   if (len(self.charges[i]), len(self.times[i])) != before[i]}
+        if 'bndry_wait_edges' in self.param:
+            self.construct()  # boundary dummy edges are only built by construct()
+        else:
+            affected = set(changed)
+            for i in changed:
+                affected.update(self.N.neighbors(i))
+            self.rebuild_stations(affected)
+
+        v1, v2, e_type, del_e = refined
+        return self.__find_edge(v1, v2, e_type), del_e
+
+    def rebuild_stations(self, stations):
+        """
+        Replace the outgoing edges of every network node at the given stations with
+        the edges construct() would create for the current charges and times.
+
+        Edges that are unchanged keep their keys. New edges get keys never used
+        before, so an edge tuple (v1, v2, key) never comes back after removal with a
+        different meaning; Instance.update_model keeps a removed edge's variable
+        fixed at 0 and would not reactivate it.
+        """
+        _init_ctn_worker(self.charges, self.times, self.param, self.config)
+        old = {}
+        for v in [v for v in self.Ntl.nodes if v[0] in stations]:
+            for e in self.Ntl.out_edges(v, keys=True):
+                sig = (e[0], e[1], self.edge_types[e], self.edge_charges[e],
+                       self.edge_times[e], self.edge_dists[e])
+                old.setdefault(sig, []).append(e)
+
+        if getattr(self, '_next_key', None) is None:
+            self._next_key = 1 + max((k for _, _, k in self.Ntl.edges(keys=True)), default=0)
+
+        for i in stations:
+            neighbors = [(j, self.N[i][j]['dH'], self.N[i][j]['dL'], self.N[i][j]['time'])
+                         for j in self.N.neighbors(i)]
+            for v1, v2, e_type, ec, et, ed in _compute_node_edges((i, self.times[i], self.charges[i], neighbors)):
+                sig = (v1, v2, e_type, ec, et, ed)
+                if old.get(sig):
+                    old[sig].pop()  # unchanged edge: keep it
+                    continue
+                key = self._next_key
+                self._next_key += 1
+                self.Ntl.add_edge(v1, v2, key=key)
+                e = (v1, v2, key)
+                self.edge_types[e] = e_type
+                self.edge_charges[e] = ec
+                self.edge_times[e] = et
+                self.edge_dists[e] = ed
+
+        stale = [e for edges in old.values() for e in edges]
+        self.Ntl.remove_edges_from(stale)
+        for e in stale:
+            for attr in (self.edge_types, self.edge_charges, self.edge_times, self.edge_dists):
+                attr.pop(e, None)
+        self.Ntl.remove_nodes_from([v for v in list(self.Ntl.nodes) if self.Ntl.degree(v) == 0])
+
+    def __find_edge(self, v1, v2, e_type):
+        """The network edge of type e_type from v1 towards v2 (rounded as in add_single_edge)."""
+        j, g2, t2, _ = v2
+        g = self.__overestimate_val(self.charges[j], g2, self.param['L'])
+        t = self.param['T'] - 1 if t2 >= self.param['T'] else self.__underestimate_val(self.times[j], t2)
+        target = (j, g, t, self.get_q(j, g))
+        if self.Ntl.has_edge(v1, target):
+            for key in self.Ntl[v1][target]:
+                if self.edge_types.get((v1, target, key)) == e_type:
+                    return (v1, target, key)
+        # The refined edge always exists after the rebuild; keep a non-None marker
+        # regardless, since Instance.solve reads None as "nothing left to refine".
+        return (v1, target, None)
 
     def cleanup(self):
         # remove all keys that are not edges in Ntl from edge_types, edge_times, edge_dists, edge_charges
