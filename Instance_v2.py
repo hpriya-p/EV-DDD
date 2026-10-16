@@ -153,33 +153,33 @@ class Instance:
     def __constr_flow_bal_load(self, v):
         for k in range(self.K):
             if (v[0] not in self.param['sources'] or v[2] != self.param['min_time']) and (v[0] not in self.param['sinks'] or v[2] != self.param['T'] - 1):
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.multi_in_edges(v)) == gp.quicksum(self.x_load[e, k] for e in self.multi_out_edges(v)), name='flow_bal_load[' + str(v) + ',' + str(k) + ']')
+                self._cons[('flow_bal_load', v, k)] = self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.multi_in_edges(v)) == gp.quicksum(self.x_load[e, k] for e in self.multi_out_edges(v)), name='flow_bal_load[' + str(v) + ',' + str(k) + ']')
 
 
     def __constr_flow_bal_ener(self, v):
         for k in range( self.K):
             if (v[2] != self.param['min_time']) and ( v[2] != self.param['T'] - 1):
-                self.model.addConstr(gp.quicksum(self.x_ener[e, k] for e in self.multi_in_edges(v)) == gp.quicksum(self.x_ener[e, k] for e in  self.multi_out_edges(v)), name='flow_bal_ener[' + str(v) + ',' + str(k) + ']')
+                self._cons[('flow_bal_ener', v, k)] = self.model.addConstr(gp.quicksum(self.x_ener[e, k] for e in self.multi_in_edges(v)) == gp.quicksum(self.x_ener[e, k] for e in  self.multi_out_edges(v)), name='flow_bal_ener[' + str(v) + ',' + str(k) + ']')
 
 
     def __constr_init_cond_x(self, i):
         LHS = gp.quicksum(self.x_ener[e, k] for k in range( self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, self.param['min_time'], self.Ntl.get_q(i,g))))
         RHS = self.n[i] + sum(v for nodes, v in self.param['D'].items() if nodes[0] == i)
-        self.model.addConstr(LHS == RHS, name='init_cond_x[' + str(i) +']')
+        self._cons[('init_cond', i)] = self.model.addConstr(LHS == RHS, name='init_cond_x[' + str(i) +']')
         
 
     def __constr_end_cond_x(self, i):
         # constraint 1
         LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))))
         RHS = self.n[i] + sum(v for nodes, v in self.param['D'].items() if nodes[1] == i)
-        self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']_1')
+        self._cons[('end_cond_1', i)] = self.model.addConstr(LHS == RHS, name='end_cond_x[' + str(i) + ']_1')
 
         # constraint 2 on surplus tractors only
         if i in self.param['tractor_nodes']:
             min_charge = min([self.param['L']] + [self.N[i][j]['dL'] for j in self.N.neighbors(i) if j in self.param['charge_nodes']])
             LHS = gp.quicksum(self.x_ener[e, k]  for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_in_edges((i, g, self.param['T'] - 1, self.Ntl.get_q(i,g))) if g >= min_charge)
             RHS = self.n[i] - self.param['N_tractors'] * self.z[i]
-            self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
+            self._cons[('end_cond_2', i)] = self.model.addConstr(LHS >= RHS, name='end_cond_x[' + str(i) + ']_2')
         
 
 
@@ -190,35 +190,35 @@ class Instance:
         else:
             Delta = 1
         if i in self.param['charge_nodes']:
-            self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * self.a[i], name='charge_cap[' + str(i) + ',' + str(t) + ']')
+            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * self.a[i], name='charge_cap[' + str(i) + ',' + str(t) + ']')
         else:
-            self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
+            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
 
     
 
     def __constr_edge(self, e):
         if self.Ntl.edge_types[e] == 'transit_L': # or self.Ntl.edge_types[e] == 'charge':
             for k in range(self.K):
-                self.model.addConstr(self.x_load[e, k] == 0, name='e_load_constr[' + str(e) + ',' + str(k) + ']')
+                self._cons[('edge', e, k)] = self.model.addConstr(self.x_load[e, k] == 0, name='e_load_constr[' + str(e) + ',' + str(k) + ']')
         elif self.Ntl.edge_types[e] == 'transit_H':
             i, g, t, q = e[1]
             if i in self.param['battery_nodes']:
                 for k in range(self.K):
-                    self.model.addConstr(self.x_load[e, k] == self.x_ener[e, k], name='e_load_ener_bat[' + str(e) + ',' + str(k) + ']')
+                    self._cons[('edge', e, k)] = self.model.addConstr(self.x_load[e, k] == self.x_ener[e, k], name='e_load_ener_bat[' + str(e) + ',' + str(k) + ']')
             else: 
                 for k in range(self.K):
-                    self.model.addConstr(self.x_ener[e, k] >= self.x_load[e, k], name='e_load_ener[' + str(e) + ',' + str(k) + ']')
+                    self._cons[('edge', e, k)] = self.model.addConstr(self.x_ener[e, k] >= self.x_load[e, k], name='e_load_ener[' + str(e) + ',' + str(k) + ']')
         elif self.Ntl.edge_types[e] == 'swap':
             for k in range(self.K):
-                self.model.addConstr(self.x_ener[e, k] == 0, name='e_swap_x[' + str(e) + ',' + str(k) + ']')
+                self._cons[('edge', e, k)] = self.model.addConstr(self.x_ener[e, k] == 0, name='e_swap_x[' + str(e) + ',' + str(k) + ']')
 
     def __constr_demand(self):
         assert 'D' in self.param.keys()
         if 'D' in self.param.keys():
             for k, (nodes, v) in enumerate(self.param['D'].items()):
                 src, sink = nodes
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == src and e[0][2] == self.param['min_time']) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == 0) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == self.param['T'] - 1)  == v,name=f"demand_{src}_{k}_src")
-                self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == sink and e[0][2] == self.param['min_time'])  == v,name=f"demand_{sink}_{k}_dest")
+                self._cons[('demand_src', k)] = self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == src and e[0][2] == self.param['min_time']) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == 0) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == src and e[1][2] == self.param['T'] - 1)  == v,name=f"demand_{src}_{k}_src")
+                self._cons[('demand_dest', k)] = self.model.addConstr(gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[1][0] == sink and e[1][2] == self.param['T'] - 1) - gp.quicksum(self.x_load[e, k] for e in self.Ntl.Ntl.edges if e[0][0] == sink and e[0][2] == self.param['min_time'])  == v,name=f"demand_{sink}_{k}_dest")
         # else:
         #     for i in self.param['sources']:
         #         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[0][0] == i and e[0][2] == self.param['min_time']) == self.D[i], name=f"demand_{i}_src")
@@ -228,6 +228,10 @@ class Instance:
     def construct_model(self, penalty=False):
         self.model = gp.Model()
         self.model.setParam('MIPGap', 0.05)
+        # Constraint handles by key (node, edge, commodity, ...). update_model removes
+        # constraints through these rather than by name: names embed str(node), which
+        # differs between int and np.int64 values of the same node.
+        self._cons = dict()
         self.x_load = dict()
         self.x_ener = dict()
         #self.D = dict()
@@ -310,6 +314,11 @@ class Instance:
         else:
             self.model.setObjective(sum(self.D[i] for i in self.param['sinks']), gp.GRB.MAXIMIZE)
 
+    def _remove_constr(self, key):
+        c = self._cons.pop(key, None)
+        if c is not None:
+            self.model.remove(c)
+
     def update_model(self, penalty=False):
         """Incrementally update the Gurobi model to reflect changes in self.Ntl.Ntl.
         Called instead of construct_model on DDD iterations after the first.
@@ -324,11 +333,7 @@ class Instance:
             for k in range(self.K):
                 self.x_load[e, k].lb = self.x_load[e, k].ub = 0
                 self.x_ener[e, k].lb = self.x_ener[e, k].ub = 0
-                for constr_name in [f'e_load_constr[{e},{k}]', f'e_load_ener_bat[{e},{k}]',
-                                    f'e_load_ener[{e},{k}]', f'e_swap_x[{e},{k}]']:
-                    c = self.model.getConstrByName(constr_name)
-                    if c is not None:
-                        self.model.remove(c)
+                self._remove_constr(('edge', e, k))
 
         # 2. Add variables for new edges
         for e in new_edges:
@@ -353,10 +358,8 @@ class Instance:
         # 5. Update flow balance constraints for affected network nodes
         for v in affected_vnodes:
             for k in range(self.K):
-                for name in [f'flow_bal_load[{v},{k}]', f'flow_bal_ener[{v},{k}]']:
-                    c = self.model.getConstrByName(name)
-                    if c is not None:
-                        self.model.remove(c)
+                self._remove_constr(('flow_bal_load', v, k))
+                self._remove_constr(('flow_bal_ener', v, k))
         self.model.update()
         for v in affected_vnodes:
             self.__constr_flow_bal_load(v)
@@ -364,10 +367,8 @@ class Instance:
 
         # 6. Update init/end condition constraints for affected original nodes
         for i in affected_i:
-            for name in [f'init_cond_x[{i}]', f'end_cond_x[{i}]_1', f'end_cond_x[{i}]_2']:
-                c = self.model.getConstrByName(name)
-                if c is not None:
-                    self.model.remove(c)
+            for key in (('init_cond', i), ('end_cond_1', i), ('end_cond_2', i)):
+                self._remove_constr(key)
         self.model.update()
         for i in affected_i:
             if i in self.N.nodes:
@@ -381,22 +382,17 @@ class Instance:
             for t in self.Ntl.times[i]:
                 affected_it.add((i, t))
         for i, t in affected_it:
-            c = self.model.getConstrByName(f'charge_cap[{i},{t}]')
-            if c is not None:
-                self.model.remove(c)
+            self._remove_constr(('charge_cap', i, t))
         self.model.update()
         for i, t in affected_it:
             if i in self.N.nodes:
                 self.__constr_chargecap(i, t)
 
-        # 8. Update demand constraints  
-        demand_constr = [f"demand_{nodes[0]}_src" for nodes in self.param['D'].keys()] + [f"demand_{nodes[1]}_dest" for nodes in self.param['D'].keys()]
-
-        for name in demand_constr:
-            c = self.model.getConstrByName(name)
-            if c is not None:
-                self.model.remove(c)
-            self.model.update()
+        # 8. Update demand constraints (they sum over all edges at the sources and sinks)
+        for k in range(self.K):
+            self._remove_constr(('demand_src', k))
+            self._remove_constr(('demand_dest', k))
+        self.model.update()
         self.__constr_demand()
 
         # 9. Reset objective
@@ -492,6 +488,9 @@ class Instance:
 
         solve_start = time.time()
         last_bound = None
+        # construct() builds the DDD network of the initial discretization; only the older
+        # update policies can leave it in a state that is not (see 'local_rebuild_update')
+        network_is_ddd = True
         self._log_ddd({'event': 'start',
                        'started': datetime.datetime.now().isoformat(timespec='seconds'),
                        'config': self.config, 'LP_relax': LP_relax,
@@ -547,68 +546,79 @@ class Instance:
                         except:
                             pass
 
-                    corrected_flow = dict()
                     x_loads = dict()
                     x_eners = dict()
                     for k in range(self.K):
-                        x_load_k = {key[0]: flow for key, flow in x_load.items() if key[1] == k and flow > 0}
-                        x_ener_k = {key[0]: flow for  key, flow in x_ener.items() if key[1] == k and flow > 0}
+                        x_loads[k] = {key[0]: flow for key, flow in x_load.items() if key[1] == k and flow > 1e-6}
+                        x_eners[k] = {key[0]: flow for key, flow in x_ener.items() if key[1] == k and flow > 1e-6}
                         if self.verbose:
-                            print(f'x_load_{k}:', x_load_k)
-                            print(f'x_ener_{k}:', x_ener_k)
-                        x_loads[k] = x_load_k
-                        x_eners[k] = x_ener_k
-                        corrected_flow[k], status = self.Ntl.convert_flow([x_load_k, x_ener_k])
-                    
+                            print(f'x_load_{k}:', x_loads[k])
+                            print(f'x_ener_{k}:', x_eners[k])
+
+                    iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
+
+                    # Termination (Algorithm 1): the solution extends to a feasible solution of
+                    # the full charge-time network if every edge carrying load or energy flow is
+                    # exact, since exact edges are edges of the full network with the same costs.
+                    # It is then optimal, as its cost is a lower bound -- provided the network is
+                    # a relaxation, which is only guaranteed when it is the true DDD network.
+                    artificial = sorted({e for k in range(self.K) for e in list(x_loads[k]) + list(x_eners[k])
+                                         if not self.Ntl.is_exact(e)}, key=str)
+
+                    if not artificial:
+                        if network_is_ddd:
+                            if verbose and self.verbose:
+                                print("feasible solution found!")
+                                print("'''''''''''''''''")
+                            avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
+                            avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+                            avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
+                            # every edge used is exact, so the network flow is the real solution
+                            flows = {name: {k: {} for k in range(self.K)} for name in ('x_load', 'x_ener')}
+                            for name, per_k in (('x_load', x_loads), ('x_ener', x_eners)):
+                                for k in range(self.K):
+                                    for e, flow in per_k[k].items():
+                                        flows[name][k][(e[0], e[1])] = flows[name][k].get((e[0], e[1]), 0) + flow
+                            soln = {'x_load': flows['x_load'], 'x_ener': flows['x_ener'], 'a': a_, 'n': n_}
+                            self._log_ddd({'event': 'final', 'status': 'converged', 'iteration': n_iter,
+                                           'objective': M.ObjVal, 'lower_bound': last_bound,
+                                           'num_edges': len(self.Ntl.Ntl.edges),
+                                           'elapsed': time.time() - solve_start,
+                                           'times': self.Ntl.times, 'charges': self.Ntl.charges,
+                                           'solution': dict(soln, z=z_)})
+                            return soln, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+                        # The older update policies can leave a network that is not a relaxation,
+                        # so this solution may not be optimal: rebuild the DDD network for the
+                        # current discretization, re-solve, and test the new solution.
+                        if self.verbose:
+                            print("Feasible solution on a patched network; rebuilding the DDD network and re-solving")
+                        self.Ntl.construct()
+                        self.construct_model()
+                        network_is_ddd = True
+                        n_iter += 1
+                        iter_times.append(time.time() - iter_start)
+                        continue
+
+                    refined = False
                     for k in range(self.K):
                         new_edge, removed_edge = self.Ntl.update([x_loads[k], x_eners[k]])
+                        refined = refined or new_edge is not None
+                        self.penalties[removed_edge] = PEN_CONST if penalty else 0
 
                         if verbose and self.verbose:
                             print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
 
-                    iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
+                    if not refined:
+                        # The update policy found nothing to refine (e.g. a path that runs out of
+                        # battery is cut short and every edge of the shortened path exists), but
+                        # the solution still uses artificial edges: correct those directly.
+                        self.Ntl.refine_artificial_edges(artificial)
+                    network_is_ddd = 'local_rebuild_update' in self.config
+                    self.update_model(penalty=penalty)
 
-                    if penalty:
-                        self.penalties[removed_edge] = PEN_CONST
-                    else:
-                        self.penalties[removed_edge] = 0
-
-                    if status and (new_edge is None):
-                        self.Ntl.construct()
-                        self.construct_model()
-                        model = self.model.relax() if LP_relax else self.model
-                        try:
-                            model.optimize()
-                        except KeyboardInterrupt:
-                            _interrupted = True
-                            break
-                        if model.ObjVal != curr_LB:
-                            if self.verbose:
-                                print("Network was not fully computed, and has been reconstructed")
-                            continue
-                        if verbose and self.verbose:
-                            print("feasible solution found!")
-                            print("'''''''''''''''''")
-                        avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
-                        avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
-                        avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
-                        if self.verbose:
-                            print(corrected_flow)
-                        soln = {'x_load': {k: corrected_flow[k][0] for k in range(self.K)}, 'x_ener': {k: corrected_flow[k][1] for k in range(self.K)}, 'a': a_, 'n':n_}
-                        self._log_ddd({'event': 'final', 'status': 'converged', 'iteration': n_iter,
-                                       'objective': M.ObjVal, 'lower_bound': last_bound,
-                                       'num_edges': len(self.Ntl.Ntl.edges),
-                                       'elapsed': time.time() - solve_start,
-                                       'times': self.Ntl.times, 'charges': self.Ntl.charges,
-                                       'solution': dict(soln, z=z_)})
-                        return soln, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
-                    else:
-                        self.update_model(penalty=penalty)
-
-
-                    if True:
+                    if self.verbose:
                         print("Solution cannot be extended to a feasible solution, updating network...")
-                        print(corrected_flow)
+                        print(f"{len(artificial)} artificial edges carry flow")
                         for i in a_.keys():
                             if a_[i] > 0 and self.verbose:
                                 print("a[", i, "] = ", a_[i])

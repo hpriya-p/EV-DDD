@@ -839,7 +839,12 @@ class ChargeTimeNetwork:
             if t >= self.param['T'] - 1:
                 break
             j = v2[0]
-            g2 = g - self.edge_dists[e] + self.edge_charges[e]
+            if self.edge_types[e] == 'swap':
+                # after a swap the vehicle has the swapped-in tractor's (or battery's) charge,
+                # which is the exact level the swap edge points to, whatever it had before
+                g2 = v2[1]
+            else:
+                g2 = g - self.edge_dists[e] + self.edge_charges[e]
             t2 = t + self.edge_times[e]
             q2 = self.get_q(j, max(g2, 0))  
             if t2 > self.param['T'] - 1 or g2 < 0:
@@ -990,6 +995,58 @@ class ChargeTimeNetwork:
 
         v1, v2, e_type, del_e = refined
         return self.__find_edge(v1, v2, e_type), del_e
+
+    def is_exact(self, e):
+        """
+        True if edge e = (v1, v2, key) leads exactly where its stored change in charge
+        and time says, i.e. it is an edge of the full charge-time network with the same
+        costs; False if its head was rounded (charge up, time down) to a retained node.
+        Waiting edges are always exact.
+        """
+        v1, v2, _ = e
+        if self.edge_types[e] == 'wait':
+            return True
+        g2 = v1[1] - self.edge_dists[e] + self.edge_charges[e]
+        t2 = v1[2] + self.edge_times[e]
+        return g2 == v2[1] and t2 == v2[2]
+
+    def refine_artificial_edges(self, edges):
+        """
+        Add the true head (charge and time) of every artificial edge in `edges` to the
+        discretization, then rebuild the affected stations so that those edges are
+        replaced by exact ones. Returns the stations whose charges or times changed.
+
+        This is the refinement step of the convergence proof: each call corrects at
+        least one artificial edge used by the current solution.
+        """
+        changed, sources = set(), set()
+        for e in edges:
+            if self.is_exact(e):
+                continue
+            v1, v2, _ = e
+            j = v2[0]
+            g2 = v1[1] - self.edge_dists[e] + self.edge_charges[e]
+            t2 = v1[2] + self.edge_times[e]
+            sources.add(v1[0])
+            if g2 not in self.charges[j]:
+                self.charges[j].append(g2)
+                self.charges[j].sort()
+                changed.add(j)
+            if t2 not in self.times[j] and t2 >= self.param['min_time']:
+                self.times[j].append(t2)
+                self.times[j].sort()
+                changed.add(j)
+        if 'bndry_wait_edges' in self.param:
+            self.construct()
+            return changed
+        # The sources are rebuilt too: with the older update policies an artificial
+        # edge can be stale (its head is already retained), and rebuilding its source
+        # replaces it with the exact edge.
+        affected = changed | sources
+        for i in changed:
+            affected.update(self.N.neighbors(i))
+        self.rebuild_stations(affected)
+        return changed
 
     def rebuild_stations(self, stations):
         """
