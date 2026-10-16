@@ -495,7 +495,10 @@ class Instance:
                        'started': datetime.datetime.now().isoformat(timespec='seconds'),
                        'config': self.config, 'LP_relax': LP_relax,
                        'T': self.param['T'], 'L': self.param['L'],
-                       'step_size': self.param['step_size'], 'MAX_ITER': self.param['MAX_ITER']},
+                       'step_size': self.param['step_size'], 'MAX_ITER': self.param['MAX_ITER'],
+                       # node coordinates, if the network has them (formerly printed every iteration)
+                       'node_positions': {i: self.N.nodes[i]['pos'] for i in self.N.nodes
+                                          if 'pos' in self.N.nodes[i]}},
                       mode='w')
 
         try:
@@ -516,9 +519,8 @@ class Instance:
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
                     
-                    print("Iteration: ", n_iter)
-                    print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
-                    print("Obj Value: ", M.ObjVal)
+                    if self.verbose:
+                        print(f"Iteration {n_iter}: obj {M.ObjVal}, network {len(self.Ntl.Ntl.nodes)} nodes, {len(self.Ntl.Ntl.edges)} edges")
 
                     x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
                     x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
@@ -541,10 +543,6 @@ class Instance:
                     if self.verbose:
                         print('a:', dict((k, v) for k, v in a_.items() if v > 0))
                         print('n:', dict((k, v) for k, v in n_.items() if v > 0))
-                        try:
-                            print({i: self.N.nodes[i]['pos'] for i in self.N.nodes})
-                        except:
-                            pass
 
                     x_loads = dict()
                     x_eners = dict()

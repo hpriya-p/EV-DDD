@@ -410,7 +410,7 @@ class ChargeTimeNetwork:
         ) as executor:
             all_results = list(tqdm(
                 executor.map(_compute_node_edges, tasks),
-                total=len(tasks), desc='construct_parallel',
+                total=len(tasks), desc='construct_parallel', disable=not self.verbose,
             ))
 
         # Serial insertion into the shared graph (networkx is not thread-safe).
@@ -435,7 +435,7 @@ class ChargeTimeNetwork:
         self.Ntl.remove_edges_from(to_remove)
 
         # Step 2: Re-add all outgoing edges from updated nodes.
-        for i in tqdm(self.updated_since_refresh):
+        for i in tqdm(self.updated_since_refresh, disable=not self.verbose):
             for t in self.times[i]:
                 if t == self.param['T'] - 1:
                     continue
@@ -454,7 +454,7 @@ class ChargeTimeNetwork:
         if self.verbose:
             print("Recomputing incoming transit edges from non-updated nodes")
         non_updated = [n for n in self.N.nodes if n not in self.updated_since_refresh]
-        for i in tqdm(non_updated):
+        for i in tqdm(non_updated, disable=not self.verbose):
             for t in self.times[i]:
                 if t == self.param['T'] - 1:
                     continue
