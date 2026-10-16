@@ -883,7 +883,7 @@ class ChargeTimeNetwork:
         refined discretization (see __update_local_rebuild).
         """
         if 'local_rebuild_update' in self.config:
-            return self.__update_local_rebuild(lst_of_flows)
+            return self.__update_local_rebuild([lst_of_flows])[0]
         for flow in lst_of_flows:
             for P, val in self.flow_decomposition(flow).items():
                 if val > 0:
@@ -954,33 +954,60 @@ class ChargeTimeNetwork:
 
         return None, None, None, None
 
-    def __update_local_rebuild(self, lst_of_flows):
+    def update_all(self, flows_by_commodity):
         """
-        Refine the discretization exactly as the simple update does (endpoints of the
-        first edge of a solution path that is missing from the network), then make the
-        network equal to the one construct() would build for the new charges/times.
+        Update the network for every commodity of one solution.
+
+        flows_by_commodity: one [load flow, energy flow] list per commodity, all from
+        the same MIP solution. Returns one (new edge, edge it replaces) pair per
+        commodity, as update() does, with (None, None) where nothing was refined.
+
+        Calling update() once per commodity is wrong when an update removes edges:
+        the next commodity's flow still refers to them. With 'local_rebuild_update'
+        every commodity's refinement points are found first, on the unchanged
+        network, and the network is rebuilt once. The older policies still update
+        commodity by commodity, ignoring flow on edges an earlier update removed.
+        """
+        if 'local_rebuild_update' in self.config:
+            return self.__update_local_rebuild(flows_by_commodity)
+        results = []
+        for flows in flows_by_commodity:
+            flows = [{e: f for e, f in flow.items() if e in self.edge_types} for flow in flows]
+            results.append(self.update(flows))
+        return results
+
+    def __update_local_rebuild(self, flows_by_commodity):
+        """
+        For each commodity, refine the discretization exactly as the simple update does
+        (endpoints of the first edge of a solution path that is missing from the
+        network). Then make the network equal to the one construct() would build for
+        the new charges/times.
 
         Only the outgoing edges of stations whose charges or times changed, and of
         their neighbours in N, can differ from construct(): every arc into a station
         starts at the station itself or at a neighbour. Those edges are recomputed
-        with _compute_node_edges, the routine construct() uses.
+        with _compute_node_edges, the routine construct() uses, once for all
+        commodities.
 
-        Returns (new edge, edge it replaces) like update(), or (None, None) when no
-        solution path needs refining.
+        Returns one (new edge, edge it replaces) pair per commodity, or (None, None)
+        for a commodity whose solution paths need no refining.
         """
         before = {i: (len(self.charges[i]), len(self.times[i])) for i in self.N.nodes}
-        refined = None
-        for flow in lst_of_flows:
-            for P, val in self.flow_decomposition(flow).items():
-                if val > 0:
-                    v1, v2, e_type, del_e = self.__update_P(P)
-                    if v1 is not None:
-                        refined = (v1, v2, e_type, del_e)
-                        break
-            if refined is not None:
-                break
-        if refined is None:
-            return None, None
+        refined = []
+        for flows in flows_by_commodity:
+            found = None
+            for flow in flows:
+                for P, val in self.flow_decomposition(flow).items():
+                    if val > 0:
+                        v1, v2, e_type, del_e = self.__update_P(P)
+                        if v1 is not None:
+                            found = (v1, v2, e_type, del_e)
+                            break
+                if found is not None:
+                    break
+            refined.append(found)
+        if all(r is None for r in refined):
+            return [(None, None)] * len(refined)
 
         # charges/times only ever grow, so a length change means new points
         changed = {i for i in self.N.nodes
@@ -993,8 +1020,8 @@ class ChargeTimeNetwork:
                 affected.update(self.N.neighbors(i))
             self.rebuild_stations(affected)
 
-        v1, v2, e_type, del_e = refined
-        return self.__find_edge(v1, v2, e_type), del_e
+        return [(None, None) if r is None else (self.__find_edge(r[0], r[1], r[2]), r[3])
+                for r in refined]
 
     def is_exact(self, e):
         """
@@ -1021,8 +1048,8 @@ class ChargeTimeNetwork:
         """
         changed, sources = set(), set()
         for e in edges:
-            if self.is_exact(e):
-                continue
+            if e not in self.edge_types or self.is_exact(e):
+                continue  # gone already (an update rebuilt its station), or exact
             v1, v2, _ = e
             j = v2[0]
             g2 = v1[1] - self.edge_dists[e] + self.edge_charges[e]

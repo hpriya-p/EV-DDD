@@ -598,8 +598,8 @@ class Instance:
                         continue
 
                     refined = False
-                    for k in range(self.K):
-                        new_edge, removed_edge = self.Ntl.update([x_loads[k], x_eners[k]])
+                    updates = self.Ntl.update_all([[x_loads[k], x_eners[k]] for k in range(self.K)])
+                    for new_edge, removed_edge in updates:
                         refined = refined or new_edge is not None
                         self.penalties[removed_edge] = PEN_CONST if penalty else 0
 
