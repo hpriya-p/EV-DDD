@@ -66,6 +66,11 @@ class Instance:
         #   MAX_ITER      (int)   – maximum number of column-generation / update iterations
         #   lagrange_multipliers (dict) – (optional) {'load': {edge: mu}, 'ener': {edge: mu}};
         #                                 Lagrange multipliers subtracted from the objective
+        #   latest_origin_time (int) – (optional) latest time at which the load of an OD pair
+        #                           may still be at its origin: for every commodity k with
+        #                           origin o_k, load flow of k on any edge out of a node
+        #                           (o_k, g, t) with t > latest_origin_time is zero (enforced
+        #                           as upper bound 0 on those x_load variables). Unset: no limit
         #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
         #                           one record per DDD iteration and a final record with the
         #                           solution; read it back with read_ddd_log
@@ -238,6 +243,8 @@ class Instance:
         self.K = 1
         if 'D' in self.param.keys():
             self.K = len(self.param['D'])
+        # origin of each commodity, in the order of param['D'] (as in __constr_demand)
+        self._origins = [nodes[0] for nodes in self.param['D'].keys()] if 'D' in self.param else []
         # for i in self.param['sources']:
         #     self.D[i] = self.model.addVar(lb=0, name=f"D[{i}]")
         # for i in self.param['sinks']:
@@ -246,7 +253,7 @@ class Instance:
         # create variables
         for e in self.Ntl.Ntl.edges:
             for k in range(self.K):
-                self.x_load[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e, k))
+                self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e, k))
                 self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
         
            
@@ -314,6 +321,18 @@ class Instance:
         else:
             self.model.setObjective(sum(self.D[i] for i in self.param['sinks']), gp.GRB.MAXIMIZE)
 
+    def _load_ub(self, e, k):
+        """
+        Upper bound of x_load[e, k]: 0 if e leaves commodity k's origin after
+        param['latest_origin_time'] (the load must have left its origin by then; this
+        is the constraint sum_{e in out(o_k, g, t)} x^k_e = 0 for t > latest_origin_time,
+        written as bounds since flows are non-negative), otherwise unbounded.
+        """
+        latest = self.param.get('latest_origin_time')
+        if latest is not None and e[0][0] == self._origins[k] and e[0][2] > latest:
+            return 0
+        return gp.GRB.INFINITY
+
     def _remove_constr(self, key):
         c = self._cons.pop(key, None)
         if c is not None:
@@ -338,7 +357,7 @@ class Instance:
         # 2. Add variables for new edges
         for e in new_edges:
             for k in range(self.K):
-                self.x_load[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER,
+                self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_load', e, k))
                 self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_ener', e, k))
@@ -496,6 +515,7 @@ class Instance:
                        'config': self.config, 'LP_relax': LP_relax,
                        'T': self.param['T'], 'L': self.param['L'],
                        'step_size': self.param['step_size'], 'MAX_ITER': self.param['MAX_ITER'],
+                       'latest_origin_time': self.param.get('latest_origin_time'),
                        # node coordinates, if the network has them (formerly printed every iteration)
                        'node_positions': {i: self.N.nodes[i]['pos'] for i in self.N.nodes
                                           if 'pos' in self.N.nodes[i]}},
