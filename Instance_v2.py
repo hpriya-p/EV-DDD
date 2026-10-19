@@ -39,6 +39,35 @@ def read_ddd_log(filepath):
         return [json.loads(line) for line in f if line.strip()]
 
 
+def discretization_from_log(filepath, iteration=None):
+    """Time and charge discretization of one iteration of a ddd_log (default: the last).
+
+    Returns {'iteration', 'times': {node: [t, ...]}, 'charges': {node: [g, ...]},
+    'lower_bound', 'objective', 'start': the log's start record, 'path'}. The log is
+    read line by line, so large logs are not loaded whole. A line cut off by a killed
+    process is skipped.
+    """
+    start, chosen = None, None
+    with open(filepath) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue  # the line being written when the process was killed
+            if rec.get('event') == 'start' and start is None:
+                start = rec
+            elif rec.get('event') == 'iteration' and (iteration is None or rec['iteration'] == iteration):
+                chosen = rec
+    if chosen is None:
+        raise ValueError(f"{filepath}: no iteration record" + (f" {iteration}" if iteration else ""))
+    to_int = lambda d: {int(i): [int(v) for v in vals] for i, vals in d.items()}
+    return {'iteration': chosen['iteration'], 'times': to_int(chosen['times']),
+            'charges': to_int(chosen['charges']), 'lower_bound': chosen.get('lower_bound'),
+            'objective': chosen.get('objective'), 'start': start or {}, 'path': filepath}
+
+
 class Instance:
     def __init__(self, N, parameters, config=['heuristic'], network_only=False, seed=None):
         # parameters dict keys (includes all ChargeTimeNetwork keys, plus):
@@ -71,6 +100,12 @@ class Instance:
         #                           origin o_k, load flow of k on any edge out of a node
         #                           (o_k, g, t) with t > latest_origin_time is zero (enforced
         #                           as upper bound 0 on those x_load variables). Unset: no limit
+        #   initial_discretization (str or dict) – (optional) resume Bi-DDD from an earlier run:
+        #                           the path of its ddd_log (its last iteration's times and
+        #                           charges are added to the initial discretization), or a
+        #                           dict {'times': {node: [...]}, 'charges': {node: [...]}}.
+        #                           A log from a run with a different T, network type
+        #                           (default/heuristic) or set of stations is refused
         #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
         #                           one record per DDD iteration and a final record with the
         #                           solution; read it back with read_ddd_log
@@ -93,6 +128,9 @@ class Instance:
         self.Ntl = ChargeTimeNetwork(N, self.param, config)
         # control printing via self.verbose
         self.verbose = self.param.get('verbose', True)
+        self.resumed_from = None
+        if self.param.get('initial_discretization') is not None:
+            self.resumed_from = self._apply_initial_discretization(self.param['initial_discretization'])
         if self.verbose:
             print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
         if seed is not None:
@@ -321,6 +359,31 @@ class Instance:
         else:
             self.model.setObjective(sum(self.D[i] for i in self.param['sinks']), gp.GRB.MAXIMIZE)
 
+    def _apply_initial_discretization(self, source):
+        """Start from an earlier run's discretization (see 'initial_discretization')."""
+        if isinstance(source, dict):
+            disc = {'times': source.get('times'), 'charges': source.get('charges'),
+                    'iteration': None, 'path': None, 'start': {}}
+        else:
+            disc = discretization_from_log(source)
+            start = disc['start']
+            if start.get('T') is not None and start['T'] != self.param['T']:
+                raise ValueError(f"{source}: logged run has T={start['T']}, this instance T={self.param['T']}")
+            kinds = {'default', 'heuristic'}
+            logged = kinds & set(start.get('config') or [])
+            mine = kinds & set(self.config)
+            if logged and logged != mine:
+                raise ValueError(f"{source}: logged run used the {logged} network, this instance {mine}")
+        unknown = {int(i) for grid in (disc['times'], disc['charges']) for i in (grid or {})} - set(self.N.nodes)
+        if unknown:
+            raise ValueError(f"initial discretization has stations not in this network: {sorted(unknown)[:10]}")
+        added = self.Ntl.set_discretization(disc['times'], disc['charges'])
+        if self.verbose:
+            print(f"Resumed discretization from {disc['path'] or 'dict'} (iteration {disc['iteration']}): "
+                  f"{added} points added")
+        return {'path': disc['path'], 'iteration': disc['iteration'], 'points_added': added,
+                'lower_bound': disc.get('lower_bound')}
+
     def _load_ub(self, e, k):
         """
         Upper bound of x_load[e, k]: 0 if e leaves commodity k's origin after
@@ -516,6 +579,7 @@ class Instance:
                        'T': self.param['T'], 'L': self.param['L'],
                        'step_size': self.param['step_size'], 'MAX_ITER': self.param['MAX_ITER'],
                        'latest_origin_time': self.param.get('latest_origin_time'),
+                       'resumed_from': self.resumed_from,
                        # node coordinates, if the network has them (formerly printed every iteration)
                        'node_positions': {i: self.N.nodes[i]['pos'] for i in self.N.nodes
                                           if 'pos' in self.N.nodes[i]}},

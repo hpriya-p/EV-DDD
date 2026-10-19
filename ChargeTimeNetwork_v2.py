@@ -330,6 +330,30 @@ class ChargeTimeNetwork:
                 self.__add_transit_edges(j, t - t2)
 
 
+    def set_discretization(self, times=None, charges=None):
+        """
+        Add the given time and charge points ({node: [values]}) to the retained ones and
+        rebuild the network. Used to resume Bi-DDD from an earlier run's discretization:
+        any discretization that contains the initial one gives a valid DDD network, so
+        restarting from it only skips the refinements already made. Points are merged
+        (never removed); times outside [min_time, T-1] and charges outside [0, L] are
+        ignored. Returns the number of points added.
+        """
+        T, L, t_min = self.param['T'], self.param['L'], self.param['min_time']
+        added = 0
+        for grid, new, lo, hi in ((self.times, times, t_min, T - 1), (self.charges, charges, 0, L)):
+            for i, values in (new or {}).items():
+                i = int(i)
+                if i not in grid:
+                    continue
+                current = set(grid[i])
+                extra = {int(v) for v in values if lo <= int(v) <= hi} - current
+                if extra:
+                    grid[i] = sorted(current | extra)
+                    added += len(extra)
+        self.construct()
+        return added
+
     def construct(self):
         self.construct_parallel()
         # for i in tqdm(self.N.nodes):
