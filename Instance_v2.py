@@ -47,7 +47,7 @@ def discretization_from_log(filepath, iteration=None):
     read line by line, so large logs are not loaded whole. A line cut off by a killed
     process is skipped.
     """
-    start, chosen = None, None
+    start, chosen, final = None, None, None
     with open(filepath) as f:
         for line in f:
             if not line.strip():
@@ -60,12 +60,18 @@ def discretization_from_log(filepath, iteration=None):
                 start = rec
             elif rec.get('event') == 'iteration' and (iteration is None or rec['iteration'] == iteration):
                 chosen = rec
+            elif rec.get('event') == 'final':
+                final = rec
     if chosen is None:
         raise ValueError(f"{filepath}: no iteration record" + (f" {iteration}" if iteration else ""))
     to_int = lambda d: {int(i): [int(v) for v in vals] for i, vals in d.items()}
+    # Running time of the earlier run: up to its final record when it wrote one (stopped
+    # runs do), which includes the iteration it was working on when it was stopped.
+    elapsed = max((r.get('elapsed') or 0) for r in (chosen, final) if r is not None)
     return {'iteration': chosen['iteration'], 'times': to_int(chosen['times']),
             'charges': to_int(chosen['charges']), 'lower_bound': chosen.get('lower_bound'),
-            'objective': chosen.get('objective'), 'start': start or {}, 'path': filepath}
+            'objective': chosen.get('objective'), 'elapsed': elapsed,
+            'start': start or {}, 'path': filepath}
 
 
 class Instance:
@@ -363,7 +369,7 @@ class Instance:
         """Start from an earlier run's discretization (see 'initial_discretization')."""
         if isinstance(source, dict):
             disc = {'times': source.get('times'), 'charges': source.get('charges'),
-                    'iteration': None, 'path': None, 'start': {}}
+                    'iteration': None, 'elapsed': 0, 'path': None, 'start': {}}
         else:
             disc = discretization_from_log(source)
             start = disc['start']
@@ -382,7 +388,7 @@ class Instance:
             print(f"Resumed discretization from {disc['path'] or 'dict'} (iteration {disc['iteration']}): "
                   f"{added} points added")
         return {'path': disc['path'], 'iteration': disc['iteration'], 'points_added': added,
-                'lower_bound': disc.get('lower_bound')}
+                'lower_bound': disc.get('lower_bound'), 'elapsed': disc.get('elapsed') or 0}
 
     def _load_ub(self, e, k):
         """
@@ -555,7 +561,11 @@ class Instance:
             f.write(json.dumps(_jsonable(record)) + '\n')
 
     def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
-        n_iter = 1
+        # A resumed run (see 'initial_discretization') continues the earlier run's counts:
+        # iterations are numbered on from its last logged one and elapsed time includes its
+        # running time, so both are totals over all attempts (MAX_ITER caps the total).
+        resumed = self.resumed_from or {}
+        n_iter = 1 + (resumed.get('iteration') or 0)
         curr_LB = 0
         iter_times = []
         iter_graph_sizes = []
@@ -568,7 +578,7 @@ class Instance:
 
         _prev_sigterm = signal.signal(signal.SIGTERM, _sigterm_handler)
 
-        solve_start = time.time()
+        solve_start = time.time() - (resumed.get('elapsed') or 0)
         last_bound = None
         # construct() builds the DDD network of the initial discretization; only the older
         # update policies can leave it in a state that is not (see 'local_rebuild_update')
