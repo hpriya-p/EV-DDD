@@ -58,6 +58,7 @@ def main():
     import case_study as cs
     import solve_worker
     from upper_bound import upper_bound_from_log
+    import Instance_v2
 
     slurm = progress.slurm_tasks()
     selected = []
@@ -112,7 +113,8 @@ def main():
 
     if args.json:
         with open(args.json, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+            # edge keys are tuples; _jsonable turns them into strings as in ddd_log
+            json.dump(Instance_v2._jsonable(results), f, indent=2, default=str)
         print(f"wrote {args.json}")
     print("LB: the iteration's lower bound (from ddd_log). UB: objective of a feasible solution "
           "of the pessimistic network, valid even when the UB MIP stops at its time limit.")

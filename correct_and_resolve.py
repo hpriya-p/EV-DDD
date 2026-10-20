@@ -321,7 +321,8 @@ def main():
 
     if args.json:
         with open(args.json, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+            # edge keys are tuples; _jsonable turns them into strings as in ddd_log
+            json.dump(Instance_v2._jsonable(results), f, indent=2, default=str)
         print(f"wrote {args.json}")
 
 
