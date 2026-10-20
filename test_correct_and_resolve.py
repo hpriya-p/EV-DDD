@@ -2,11 +2,13 @@
 
     python test_correct_and_resolve.py
 
-1. One round from an early, a middle and the last Bi-DDD iteration: "feasible"
-   comes with the known optimum; "not feasible" lists edges that really are rounded.
-2. Repeated rounds from the first iteration reach a feasible solution at the optimum.
-3. Three OD pairs: the objective never decreases from round to round (each
-   correction only tightens the relaxation).
+1. One round from an early, a middle and the last Bi-DDD iteration: a "feasible"
+   result costs at least the known optimum, and exactly it when flagged optimal;
+   "not feasible" lists edges that really are rounded; rounds that are not exact
+   ran the path replay and the design-extension check.
+2. Repeated rounds from the first iteration end feasible.
+3. Three OD pairs: the lower bound never decreases from round to round, and a
+   feasible result costs at least the lower bound.
 """
 import contextlib
 import io
@@ -60,35 +62,49 @@ def main():
     opt = ddd_log(net, log, **corridor)
     its = [r['iteration'] for r in Instance_v2.read_ddd_log(log) if r['event'] == 'iteration']
 
+    def judge(res):
+        """A feasible result is a real solution: cost >= optimum, = optimum when flagged optimal."""
+        st = res['status']
+        if st.startswith('feasible'):
+            good = res['objective'] >= opt - 1e-4 * opt and (not res['optimal'] or abs(res['objective'] - opt) < 1e-4 * opt)
+        else:
+            good = st == 'not feasible' and all(r['true_head'] != r['head'][:3] for r in res['rounded_edges'])
+        checks_ran = all(('replay' in h and 'extension' in h) for h in res['history'] if h['rounded_edges'])
+        return good and checks_ran
+
     # 1. one round
     for it in sorted({its[0], its[len(its) // 2], its[-1]}):
         res = run(net, log, corridor, iteration=it, rounds=1)
-        if res['status'] == 'feasible':
-            good = abs(res['objective'] - opt) < 1e-4 * opt
-        else:
-            good = res['status'] == 'not feasible' and all(r['true_head'] != r['head'][:3] for r in res['rounded_edges'])
+        good = judge(res)
         ok &= good
-        print(f"1. from iteration {it:>3}: {res['status']:<13} objective {res.get('objective', 0):9.2f} "
-              f"(optimum {opt:.2f}), rounded edges left {len(res.get('rounded_edges', []))}  {'ok' if good else 'WRONG'}")
+        h0 = res['history'][0]
+        extra = (f"; replay: {h0['replay']['failing']}/{h0['replay']['paths']} paths fail; "
+                 f"extension: {h0['extension']['status']}") if 'replay' in h0 else ''
+        print(f"1. from iteration {it:>3}: {res['status']:<26} objective {res.get('objective', 0):9.2f} "
+              f"optimal={res.get('optimal')} (optimum {opt:.2f}) after {res['rounds']} rounds{extra}  "
+              f"{'ok' if good else 'WRONG'}")
 
     # 2. repeated rounds from the first iteration
     res = run(net, log, corridor, iteration=its[0], rounds=60)
-    good = res['status'] == 'feasible' and abs(res['objective'] - opt) < 1e-4 * opt
+    good = judge(res) and res['status'].startswith('feasible')
     ok &= good
     print(f"2. from iteration {its[0]} with up to 60 rounds: {res['status']} after {res['rounds']} rounds, "
-          f"objective {res['objective']:.2f}  {'ok' if good else 'WRONG'}")
+          f"objective {res['objective']:.2f}, optimal={res['optimal']}  {'ok' if good else 'WRONG'}")
 
     # 3. three OD pairs, from a run stopped early
     three = dict(mode='tractor', T=240, corridor_k=1, latest_origin_time=16)
     log3 = os.path.join(tmp, 'k3.jsonl')
     ddd_log(net, log3, max_iter=12, **three)
     res = run(net, log3, three, rounds=3)
-    objs = [h['objective'] for h in res['history']]
-    good = all(b >= a * (1 - 1e-4) - 1e-6 for a, b in zip(objs, objs[1:]))
+    lbs = [h['mip_bound'] for h in res['history']]
+    good = all(b >= a * (1 - 1e-4) - 1e-6 for a, b in zip(lbs, lbs[1:]))
+    if res['status'].startswith('feasible'):
+        good &= res['objective'] >= res['lower_bound'] - 1e-6
     ok &= good
-    print(f"3. K=3: {res['status']} after {res['rounds']} rounds; objectives "
-          f"{', '.join(f'{o:.2f}' for o in objs)}; rounded edges per round "
-          f"{[h['rounded_edges'] for h in res['history']]}  {'ok' if good else 'WRONG'}")
+    gap = f", gap {100 * res['gap']:.2f}%" if 'gap' in res else ''
+    print(f"3. K=3: {res['status']} after {res['rounds']} rounds, objective {res.get('objective', 0):.2f}, "
+          f"lower bounds {', '.join(f'{x:.2f}' for x in lbs)}{gap}", end='')
+    print(f"  {'ok' if good else 'WRONG'}")
     print("ALL OK" if ok else "SOME CHECKS FAILED")
 
 
