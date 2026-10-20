@@ -158,11 +158,20 @@ def _extension(N, params, config, instance_class, instance_kwargs, inst, mip_gap
     return res
 
 
-def correct_and_resolve(N, parameters, config, ddd_log, iteration=None, rounds=1,
+def correct_and_resolve(N, parameters, config, ddd_log=None, iteration=None, rounds=1,
                         instance_class=Instance_v2.Instance, instance_kwargs=None,
-                        mip_gap=1e-4, time_limit=None, threads=0):
-    disc = Instance_v2.discretization_from_log(ddd_log, iteration)
+                        mip_gap=1e-4, time_limit=None, threads=0, discretization=None):
+    """See the module docstring. The discretization comes from ddd_log (one iteration,
+    default the latest), or is given directly as discretization={'times': {node: [...]},
+    'charges': {node: [...]}, 'iteration': ..., 'lower_bound': ...} (e.g. by a running solve)."""
+    if discretization is not None:
+        disc = {'iteration': discretization.get('iteration'), 'lower_bound': discretization.get('lower_bound'),
+                'times': {int(i): [int(t) for t in ts] for i, ts in discretization['times'].items()},
+                'charges': {int(i): [int(g) for g in gs] for i, gs in discretization['charges'].items()}}
+    else:
+        disc = Instance_v2.discretization_from_log(ddd_log, iteration)
     params = dict(parameters)
+    params.pop('initial_discretization', None)
     params.pop('ddd_log', None)
     params['initial_discretization'] = {'times': disc['times'], 'charges': disc['charges']}
     t0 = time.time()
