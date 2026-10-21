@@ -149,7 +149,7 @@ def _replay(inst):
 def _extension(N, params, config, instance_class, instance_kwargs, inst, mip_gap, time_limit, threads):
     """Check C: the design of inst's solution fixed exactly, solved on the pessimistic network."""
     design = _solution(inst)
-    design = {name: design[name] for name in ('a', 'n', 'z')}
+    design = {name: design[name] for name in ('a_c', 'a_s', 'n', 'z')}
     probe = instance_class(N, dict(params, initial_discretization=None), list(config),
                            network_only=True, **(instance_kwargs or {}))
     res = upper_bound_on_instance(probe, inst.Ntl.times, inst.Ntl.charges, time_limit=time_limit,
@@ -318,7 +318,8 @@ def main():
                        else f"not proven optimal: gap {100 * entry.get('gap', 0):.2f}% to the lower bound"
                        if 'gap' in entry else 'not proven optimal (MIP stopped at its time limit)')
             print(f"  FEASIBLE ({how}; {verdict}): cost {fmt(entry['objective'])}; "
-                  f"chargers a={entry['solution']['a']}, surplus n={entry['solution']['n']}")
+                  f"chargers a_c={entry['solution']['a_c']}, swap sites a_s={entry['solution']['a_s']}, "
+                  f"surplus n={entry['solution']['n']}")
         elif status == 'not feasible':
             print(f"  NOT FEASIBLE: the solution still uses {len(entry['rounded_edges'])} rounded edges and its "
                   f"design cannot be operated on the pessimistic network; e.g. "

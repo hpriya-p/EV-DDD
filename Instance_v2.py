@@ -96,7 +96,12 @@ class Instance:
         #   N_batteries   (int)   – maximum number of batteries that can be placed at battery nodes
         #   N_chargers    (int)   – maximum number of chargers that can be installed at charge nodes
         #   charge_cost   (dict)  – {(node, time): cost}; per-unit charge cost at node i at time t
-        #   stat_cost     (dict)  – {node: cost}; fixed cost per charger installed at node
+        #   stat_cost     (dict)  – {node: cost}; cost per charger a_c[i] installed at node i
+        #   site_install_cost (float) – (optional, default 0) cost of installing a swap site,
+        #                           a_s[i] = 1, at a battery or tractor node i
+        #   existing_charge_nodes (list) – (optional) existing charging stations: their current
+        #                           capacity (charge_rate[i]) is available without installing,
+        #                           i.e. charging <= Delta * charge_rate[i] * (a_c[i] + 1) there
         #   surplus_cost  (dict)  – {node: cost}; cost per surplus truck stationed at node
         #   MAX_ITER      (int)   – maximum number of column-generation / update iterations
         #   lagrange_multipliers (dict) – (optional) {'load': {edge: mu}, 'ener': {edge: mu}};
@@ -239,7 +244,9 @@ class Instance:
         else:
             Delta = 1
         if i in self.param['charge_nodes']:
-            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * self.a[i], name='charge_cap[' + str(i) + ',' + str(t) + ']')
+            # an existing station keeps its current capacity for free: a_c[i] + 1 units
+            units = self.a_c[i] + (1 if i in self._existing_stations else 0)
+            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * units, name='charge_cap[' + str(i) + ',' + str(t) + ']')
         else:
             self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
 
@@ -302,8 +309,11 @@ class Instance:
         
            
         self.n = dict()
-        self.a= dict()
+        self.a_c = dict()   # number of chargers installed at i
+        self.a_s = dict()   # 1 if a swap site is installed at i (battery or tractor nodes)
+        self.a = self.a_c   # older name, kept for code that reads inst.a
         self.z = dict()
+        self._existing_stations = set(self.param.get('existing_charge_nodes', []))
         for i in self.N.nodes:
             if i in self.param['tractor_nodes'] or i in self.param['battery_nodes']:
                 self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
@@ -313,10 +323,19 @@ class Instance:
                 self.n[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
                 self.z[i] = self.model.addVar(lb = 0, ub=0, vtype=gp.GRB.BINARY, name="z[" + str(i) + "]")
             if i in self.param['charge_nodes']:
-                self.a[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name='a[' + str(i) + ']')
+                self.a_c[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name='a_c[' + str(i) + ']')
             else:
-                self.a[i] = self.model.addVar(lb=0, ub=0,  vtype=gp.GRB.INTEGER, name='a[' + str(i) + ']')
+                self.a_c[i] = self.model.addVar(lb=0, ub=0,  vtype=gp.GRB.INTEGER, name='a_c[' + str(i) + ']')
+            swap_node = i in self.param['tractor_nodes'] or i in self.param['battery_nodes']
+            self.a_s[i] = self.model.addVar(lb=0, ub=1 if swap_node else 0, vtype=gp.GRB.BINARY, name='a_s[' + str(i) + ']')
         self.model.update()
+
+        # surplus units only at an installed swap site: n[i] <= M * a_s[i], M = total demand
+        M_site = sum(self.param['D'].values()) if 'D' in self.param else 0
+        for i in self.N.nodes:
+            if i in self.param['tractor_nodes'] or i in self.param['battery_nodes']:
+                self._cons[('site_cap', i)] = self.model.addConstr(self.n[i] <= M_site * self.a_s[i],
+                                                                   name='site_cap[' + str(i) + ']')
         
         for v in self.Ntl.Ntl.nodes:
             self.__constr_flow_bal_ener(v)
@@ -348,7 +367,9 @@ class Instance:
                         for e in self.Ntl.Ntl.edges for k in range(self.K))
             + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])]
                           for e in self.Ntl.Ntl.edges for k in range(self.K) if self.Ntl.edge_charges[e] > 0)
-            + gp.quicksum(self.param['stat_cost'][i] * self.a[i] for i in self.param['charge_nodes'])
+            + gp.quicksum(self.param['stat_cost'][i] * self.a_c[i] for i in self.param['charge_nodes'])
+            + gp.quicksum(self.param.get('site_install_cost', 0) * self.a_s[i]
+                          for i in set(self.param['tractor_nodes']) | set(self.param['battery_nodes']))
             + gp.quicksum(self.param['tractor_cost'] * self.n[i] for i in self.param['tractor_nodes'])
             + gp.quicksum(self.param['battery_cost'] * self.n[i] for i in self.param['battery_nodes'])
             + gp.quicksum(self.param['battery_cost'] * self.z[i] for i in self.param['tractor_nodes'])
@@ -618,7 +639,8 @@ class Instance:
 
                     x_load = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_load" in v.VarName}
                     x_ener = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "x_ener" in v.VarName}
-                    a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "a[" in v.VarName}
+                    a_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if v.VarName.startswith("a_c[")}
+                    as_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if v.VarName.startswith("a_s[")}
                     n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
                     z_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "z[" in v.VarName}
                     curr_LB = M.ObjVal
@@ -635,7 +657,8 @@ class Instance:
                     assert curr_LB >= LB, "objective value too small"
                    
                     if self.verbose:
-                        print('a:', dict((k, v) for k, v in a_.items() if v > 0))
+                        print('a_c:', dict((k, v) for k, v in a_.items() if v > 0))
+                        print('a_s:', dict((k, v) for k, v in as_.items() if v > 0))
                         print('n:', dict((k, v) for k, v in n_.items() if v > 0))
 
                     x_loads = dict()
@@ -671,7 +694,9 @@ class Instance:
                                 for k in range(self.K):
                                     for e, flow in per_k[k].items():
                                         flows[name][k][(e[0], e[1])] = flows[name][k].get((e[0], e[1]), 0) + flow
-                            soln = {'x_load': flows['x_load'], 'x_ener': flows['x_ener'], 'a': a_, 'n': n_}
+                            # 'a' kept as the older name of a_c
+                            soln = {'x_load': flows['x_load'], 'x_ener': flows['x_ener'], 'a_c': a_, 'a_s': as_,
+                                    'a': a_, 'n': n_}
                             self._log_ddd({'event': 'final', 'status': 'converged', 'iteration': n_iter,
                                            'objective': M.ObjVal, 'lower_bound': last_bound,
                                            'num_edges': len(self.Ntl.Ntl.edges),
@@ -713,7 +738,7 @@ class Instance:
                         print(f"{len(artificial)} artificial edges carry flow")
                         for i in a_.keys():
                             if a_[i] > 0 and self.verbose:
-                                print("a[", i, "] = ", a_[i])
+                                print("a_c[", i, "] = ", a_[i])
                         for i in n_.keys():
                             if n_[i] > 0 and self.verbose:
                                 print("n[", i, "] = ", n_[i])

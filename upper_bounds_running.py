@@ -99,7 +99,7 @@ def main():
                     time_limit=args.time_limit, mip_gap=args.mip_gap, threads=args.threads)
                 entry.update({k: res[k] for k in ('status', 'upper_bound', 'lower_bound', 'gap', 'iteration',
                                                   'mip_bound', 'network_size')})
-                entry['design'] = {k: res['solution'][k] for k in ('a', 'n', 'z')} if res['solution'] else None
+                entry['design'] = {k: res['solution'][k] for k in ('a_c', 'a_s', 'n', 'z')} if res['solution'] else None
             except ValueError as e:          # e.g. no iteration logged yet
                 entry['status'] = str(e)
             entry['seconds'] = time.time() - t0

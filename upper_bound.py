@@ -251,7 +251,8 @@ def _solution(inst):
             if x.X > 0.5:
                 flows[name][k][(e[0], e[1], inst.Ntl.edge_types[e])] = round(x.X)
     get = lambda d: {int(i): round(x.X) for i, x in d.items() if x.X > 0.5}
-    return dict(flows, a=get(inst.a), n=get(inst.n), z=get(inst.z))
+    a_c = get(inst.a_c)
+    return dict(flows, a_c=a_c, a_s=get(inst.a_s), n=get(inst.n), z=get(inst.z), a=a_c)  # a: older name of a_c
 
 
 def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4, threads=0,
@@ -261,16 +262,19 @@ def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4,
     network of the given discretization and the model is rebuilt and solved once.
     Any settings that inst applies in construct_model (e.g. a fixed design) carry over.
 
-    fixed_design: optional {'a': {i: v}, 'n': {...}, 'z': {...}}; every a, n, z is then
-    fixed to exactly that value (0 where absent), so the solve asks whether that design
-    can be operated feasibly (and at what cost).
+    fixed_design: optional {'a_c': {i: v}, 'a_s': {...}, 'n': {...}, 'z': {...}} ('a' is read
+    as a_c); every a_c, a_s, n, z is then fixed to exactly that value (0 where absent), so the
+    solve asks whether that design can be operated feasibly (and at what cost).
     """
     t0 = time.time()
     inst.Ntl = PessimisticChargeTimeNetwork.from_network(inst.Ntl, times, charges)
     inst.construct_model()
     if fixed_design is not None:
-        for name, var in (('a', inst.a), ('n', inst.n), ('z', inst.z)):
-            values = {int(i): v for i, v in (fixed_design.get(name) or {}).items()}
+        for name, var in (('a_c', inst.a_c), ('a_s', inst.a_s), ('n', inst.n), ('z', inst.z)):
+            given = fixed_design.get(name)
+            if given is None and name == 'a_c':
+                given = fixed_design.get('a')            # older name
+            values = {int(i): v for i, v in (given or {}).items()}
             for i, x in var.items():
                 x.lb = x.ub = values.get(int(i), 0)
         inst.model.update()
