@@ -145,7 +145,9 @@ class Instance:
         if self.verbose:
             print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
         if seed is not None:
-            self.seed(seed)
+            # seed() was removed (it was faulty); warm-start with initial_discretization
+            raise ValueError("Instance(seed=...) is no longer supported: pass the earlier run's "
+                             "discretization as parameters['initial_discretization'] instead")
         if not network_only:
             self.construct_model()
 
@@ -851,74 +853,3 @@ class Instance:
                 print("Constraints removed: ", removed_constrs)
 
         return equal
-    
-    def seed(self, soln):
-        #TODO this function is faulty
-        
-        """
-        Pre-populate self.Ntl.times and self.Ntl.charges from a prior solution's
-        x_load flow dict, then completely rebuild the network and Gurobi model.
-
-        For every edge with positive flow in x_load, the exact (t, g) values
-        used by each endpoint are inserted into self.Ntl.times and self.Ntl.charges.
-        The charge-time network is then cleared and reconstructed from scratch,
-        followed by a full rebuild of the Gurobi model.
-
-        Parameters
-        ----------
-        x_load : dict
-            Edge-key -> flow value mapping as returned by run_DDD()[0]['x_load'].
-        """
-        # 1. Insert breakpoints from the prior solution
-        modified = False
-        for edge_dict in soln['x_load'].values():
-            for e in edge_dict.keys():
-                (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
-                if g1 not in self.Ntl.charges[i]:
-                    self.Ntl.charges[i].append(g1)
-                    self.Ntl.charges[i].sort()
-                    modified = True
-                if t1 not in self.Ntl.times[i]:
-                    self.Ntl.times[i].append(t1)
-                    self.Ntl.times[i].sort()
-                    modified = True
-                if g2 not in self.Ntl.charges[j]:
-                    self.Ntl.charges[j].append(g2)
-                    self.Ntl.charges[j].sort()
-                    modified = True
-                if t2 not in self.Ntl.times[j]:
-                    self.Ntl.times[j].append(t2)
-                    self.Ntl.times[j].sort()
-                    modified = True
-
-        modified = False
-        for edge_dict in soln['x_ener'].values():
-            for e in edge_dict.keys():
-                (i, g1, t1, _q1), (j, g2, t2, _q2) = e[0], e[1]
-                if g1 not in self.Ntl.charges[i]:
-                    self.Ntl.charges[i].append(g1)
-                    self.Ntl.charges[i].sort()
-                    modified = True
-                if t1 not in self.Ntl.times[i] and t1 < self.param['T']:
-                    self.Ntl.times[i].append(t1)
-                    self.Ntl.times[i].sort()
-                    modified = True
-                if g2 not in self.Ntl.charges[j]:
-                    self.Ntl.charges[j].append(g2)
-                    self.Ntl.charges[j].sort()
-                    modified = True
-                if t2 not in self.Ntl.times[j] and t2 < self.param['T']:
-                    self.Ntl.times[j].append(t2)
-                    self.Ntl.times[j].sort()
-                    modified = True
-        
-        if modified: 
-            for i in self.N.nodes:
-                if self.verbose:
-                    print(i)
-                    print(self.Ntl.charges[i])
-                    print(self.Ntl.times[i])
-            
-        self.Ntl.construct()
-        self.construct_model()
-
