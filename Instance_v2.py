@@ -117,6 +117,14 @@ class Instance:
         #                           dict {'times': {node: [...]}, 'charges': {node: [...]}}.
         #                           A log from a run with a different T, network type
         #                           (default/heuristic) or set of stations is refused
+        #   fast_update   (dict)  – (optional) {'policy': 'simple_update', 'seconds': 18000}: use
+        #                           this faster update policy until the solve's elapsed time
+        #                           (counting earlier attempts of a resumed run) reaches
+        #                           'seconds', then rebuild the network and model for the
+        #                           current discretization and continue with the configured
+        #                           policy. While the fast policy is in use the network need not
+        #                           be a relaxation, so those iterations log their bound as
+        #                           'relaxation_bound' and 'lower_bound' as None
         #   snapshot_on_interrupt (bool) – (optional, default False) on interrupt, write the
         #                           whole instance to instance_snapshot_<timestamp>.json in
         #                           the cwd (dump_to_json; hundreds of MB on large networks).
@@ -392,6 +400,13 @@ class Instance:
         else:
             self.model.setObjective(sum(self.D[i] for i in self.param['sinks']), gp.GRB.MAXIMIZE)
 
+    UPDATE_POLICIES = ('smart_update', 'simple_update', 'simple_w_incoming_update', 'local_rebuild_update')
+
+    def _set_update_policy(self, policy):
+        """Use `policy` for later network updates (Instance and its network share the choice)."""
+        self.config = [c for c in self.config if c not in self.UPDATE_POLICIES] + [policy]
+        self.Ntl.config = [c for c in self.Ntl.config if c not in self.UPDATE_POLICIES] + [policy]
+
     def _apply_initial_discretization(self, source):
         """Start from an earlier run's discretization (see 'initial_discretization')."""
         if isinstance(source, dict):
@@ -622,12 +637,33 @@ class Instance:
                                           if 'pos' in self.N.nodes[i]}},
                       mode='w')
 
+        last_valid_bound = None
+        # optional fast first phase (see 'fast_update'): the configured policy is restored,
+        # with a full rebuild, once the elapsed time reaches fast['seconds']
+        fast = self.param.get('fast_update')
+        final_policy = next((c for c in self.config if c in self.UPDATE_POLICIES), None)
+        fast_active = bool(fast) and time.time() - solve_start < fast['seconds']
+        if fast_active:
+            self._set_update_policy(fast['policy'])
         try:
             if self.verbose:
                 print("'''' LOGGING ''''")
             while n_iter < self.param['MAX_ITER']:
                 try:
                     iter_start = time.time()
+
+                    if fast_active and time.time() - solve_start >= fast['seconds']:
+                        # end of the fast phase: make the network the DDD network of the
+                        # current discretization again, then refine with the configured policy
+                        fast_active = False
+                        self._set_update_policy(final_policy)
+                        self.Ntl.construct()
+                        self.construct_model()
+                        network_is_ddd = True
+                        self._log_ddd({'event': 'policy_switch', 'iteration': n_iter,
+                                       'from': fast['policy'], 'to': final_policy,
+                                       'elapsed': time.time() - solve_start,
+                                       'num_edges': len(self.Ntl.Ntl.edges)})
 
                     if LP_relax:
                         M = self.model.relax()
@@ -650,11 +686,19 @@ class Instance:
                     n_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "n[" in v.VarName}
                     z_ = {self.parse_var_name(v.VarName): v.X for v in M.getVars() if "z[" in v.VarName}
                     curr_LB = M.ObjVal
-                    last_bound = self._objective_bound(M)
+                    # The bound is a lower bound on the true optimum only if this network is
+                    # a relaxation, i.e. the DDD network (always, except under the fast policy).
+                    relaxation_bound = self._objective_bound(M)
+                    if network_is_ddd:
+                        last_valid_bound = relaxation_bound
+                    last_bound = last_valid_bound
                     # Discretization and size of the network this relaxation was solved on
                     # (before update() refines it for the next iteration).
                     self._log_ddd({'event': 'iteration', 'iteration': n_iter,
-                                   'lower_bound': last_bound, 'objective': M.ObjVal,
+                                   'lower_bound': relaxation_bound if network_is_ddd else None,
+                                   'relaxation_bound': relaxation_bound,
+                                   'update_policy': fast['policy'] if fast_active else final_policy,
+                                   'objective': M.ObjVal,
                                    'num_edges': len(self.Ntl.Ntl.edges),
                                    'num_nodes': len(self.Ntl.Ntl.nodes),
                                    'elapsed': time.time() - solve_start,
