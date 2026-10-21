@@ -117,6 +117,10 @@ class Instance:
         #                           dict {'times': {node: [...]}, 'charges': {node: [...]}}.
         #                           A log from a run with a different T, network type
         #                           (default/heuristic) or set of stations is refused
+        #   snapshot_on_interrupt (bool) – (optional, default False) on interrupt, write the
+        #                           whole instance to instance_snapshot_<timestamp>.json in
+        #                           the cwd (dump_to_json; hundreds of MB on large networks).
+        #                           Resuming needs only the ddd_log
         #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
         #                           one record per DDD iteration and a final record with the
         #                           solution; read it back with read_ddd_log
@@ -756,7 +760,7 @@ class Instance:
                     break
         finally:
             signal.signal(signal.SIGTERM, _prev_sigterm)
-            if _interrupted:
+            if _interrupted and self.param.get('snapshot_on_interrupt'):
                 self.dump_to_json()
 
         self._log_ddd({'event': 'final', 'status': 'interrupted' if _interrupted else 'max_iter',
