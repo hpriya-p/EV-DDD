@@ -99,9 +99,12 @@ class Instance:
         #   stat_cost     (dict)  – {node: cost}; cost per charger a_c[i] installed at node i
         #   site_install_cost (float) – (optional, default 0) cost of installing a swap site,
         #                           a_s[i] = 1, at a battery or tractor node i
-        #   existing_charge_nodes (list) – (optional) existing charging stations: their current
-        #                           capacity (charge_rate[i]) is available without installing,
-        #                           i.e. charging <= Delta * charge_rate[i] * (a_c[i] + 1) there
+        #   existing_chargers (dict) – (optional) {node: number of chargers already installed};
+        #                           they cost nothing, a_c[i] counts the new chargers only (each
+        #                           costing stat_cost[i]), and all have the station's power:
+        #                           charging <= Delta * charge_rate[i] * (existing_chargers[i] + a_c[i])
+        #   existing_charge_nodes (list) – (optional) existing charging stations; one at a node
+        #                           missing from existing_chargers counts as one free charger
         #   surplus_cost  (dict)  – {node: cost}; cost per surplus truck stationed at node
         #   MAX_ITER      (int)   – maximum number of column-generation / update iterations
         #   lagrange_multipliers (dict) – (optional) {'load': {edge: mu}, 'ener': {edge: mu}};
@@ -258,8 +261,8 @@ class Instance:
         else:
             Delta = 1
         if i in self.param['charge_nodes']:
-            # an existing station keeps its current capacity for free: a_c[i] + 1 units
-            units = self.a_c[i] + (1 if i in self._existing_stations else 0)
+            # existing chargers are free; a_c[i] new chargers of the same power are added
+            units = self.a_c[i] + self._existing_chargers.get(i, 0)
             self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * units, name='charge_cap[' + str(i) + ',' + str(t) + ']')
         else:
             self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
@@ -327,7 +330,10 @@ class Instance:
         self.a_s = dict()   # 1 if a swap site is installed at i (battery or tractor nodes)
         self.a = self.a_c   # older name, kept for code that reads inst.a
         self.z = dict()
-        self._existing_stations = set(self.param.get('existing_charge_nodes', []))
+        # chargers already installed at each node (free); older inputs list only the
+        # stations, each counting as one charger
+        self._existing_chargers = {i: 1 for i in self.param.get('existing_charge_nodes', [])}
+        self._existing_chargers.update(self.param.get('existing_chargers', {}))
         for i in self.N.nodes:
             if i in self.param['tractor_nodes'] or i in self.param['battery_nodes']:
                 self.n[i] = self.model.addVar(lb = 0, vtype=gp.GRB.INTEGER, name="n[" + str(i) + "]")
