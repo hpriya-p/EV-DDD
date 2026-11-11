@@ -158,6 +158,8 @@ def _compute_node_edges_pessimistic(task):
                 v1 = (i, g, t, q1)
                 UB = speed_curve[q1]['maxbat']
                 if 'heuristic' not in config:
+                    # rounded down (int), unlike the DDD network's ceil: a pessimistic edge must
+                    # never charge faster than a real charger
                     for g2 in range(g + 1, int(min(UB + 1, g + param['charge_rate'][i] * speed_curve[q1]['speed'] + 1))):
                         if g2 <= L and t + 1 < T:
                             emit(v1, i, g2, t + 1, 'charge')

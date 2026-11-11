@@ -146,7 +146,8 @@ def _compute_node_edges(task):
                 v1 = (i, g, t, q1)
                 UB = speed_curve[q1]['maxbat']
                 if 'heuristic' not in config:
-                    for g2 in range(g + 1, int(min(UB + 1, g + param['charge_rate'][i] * speed_curve[q1]['speed'] + 1))):
+                    # up to ceil(rate * speed) levels per step, so that slow chargers still charge
+                    for g2 in range(g + 1, int(min(UB + 1, g + np.ceil(param['charge_rate'][i] * speed_curve[q1]['speed']) + 1))):
                         if g2 <= L and t + 1 < T:
                             emit(v1, i, g2, t + 1, 'charge')
                 else:
@@ -689,7 +690,7 @@ class ChargeTimeNetwork:
             q1 = self.get_q(i, g)
             UB = self.param['speed_curve'][q1]['maxbat']
             if 'heuristic' not in self.config:
-                for g2 in range(g + 1, int(min(UB + 1, g + self.param['charge_rate'][i] * self.param['speed_curve'][q1]['speed'] + 1))):
+                for g2 in range(g + 1, int(min(UB + 1, g + np.ceil(self.param['charge_rate'][i] * self.param['speed_curve'][q1]['speed']) + 1))):
                     if g2 <= self.param['L'] and t + 1 < self.param['T']:
                         q2 = self.get_q(i, g2)
                         e = self.add_single_edge((i, g, t, q1), (i, g2, t + 1, q2), 'charge')

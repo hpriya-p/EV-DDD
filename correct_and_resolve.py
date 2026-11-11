@@ -6,17 +6,20 @@ From the times and charges of one iteration of a ddd_log (default: the latest):
   2. find every rounded edge of the solution: an edge carrying load or energy flow
      whose true head (charge, arrival time) is not a retained node;
   3. add each such head's charge to the head station's charges list and its arrival
-     time to the station's times list;
+     time to the station's times list; where a charger is overloaded at some step,
+     add the times that make the capacity constraint exact there;
   4. rebuild the whole DDD network from the corrected lists (construct()) and the
      model, and solve again;
-  5. if the new solution uses only exact edges it is feasible for the full problem,
+  5. if the new solution uses only exact edges and overloads no charger at any step,
+     it is feasible for the full problem,
      and since the network is still a relaxation it is also optimal (as in Bi-DDD's
      stopping rule): return it. Otherwise report that it is not feasible, with
      the rounded edges it still uses.
 Steps 2-4 are repeated up to --rounds times (default 1).
 
 After every solve (the first and each corrected one), three checks, in order:
-  A. exact edges: the solution uses only exact edges -> feasible and optimal; stop.
+  A. exact edges: the solution uses only exact edges and no charger is overloaded at
+     any step -> feasible and optimal; stop.
   B. path replay (diagnostic only): each load and energy path of the solution is
      followed with true charges and arrival times, vehicles waiting when they arrive
      later than planned; reports the paths that run out of battery or arrive after
@@ -81,10 +84,27 @@ def _true_head(ctn, e):
     return v2[0], v1[1] - ctn.edge_dists[e] + ctn.edge_charges[e], v1[2] + ctn.edge_times[e]
 
 
-def _correct(ctn, edges):
-    """Add the true heads of `edges` to the charges and times lists. Returns points added."""
+def _overloaded(inst):
+    """Stations whose chargers are overloaded at some step, with the time points that make
+    the capacity constraints exact there (Instance._overloaded_chargers)."""
+    x_eners = {k: {} for k in range(inst.K)}
+    for (e, k), x in inst.x_ener.items():
+        if x.X > 0.5 and e in inst.Ntl.edge_types:
+            x_eners[k][e] = x.X
+    a_c = {int(i): x.X for i, x in inst.a_c.items()}
+    return inst._overloaded_chargers(x_eners, a_c)
+
+
+def _correct(ctn, edges, overloaded=None):
+    """Add the true heads of `edges` to the charges and times lists, and the time points
+    of overloaded chargers ({station: [t]}). Returns points added."""
     T, t_min = ctn.param['T'], ctn.param['min_time']
     added = []
+    for j, ts in (overloaded or {}).items():
+        for t in sorted(ts):
+            if t_min <= t <= T - 1 and t not in ctn.times[j]:
+                ctn.times[j] = sorted(set(ctn.times[j]) | {int(t)})
+                added.append(('time', j, int(t)))
     for e in edges:
         j, g, t = _true_head(ctn, e)
         g, t = int(g), int(t)
@@ -186,14 +206,17 @@ def correct_and_resolve(N, parameters, config, ddd_log=None, iteration=None, rou
                         else f'no solution (gurobi status {m.Status})',
                         rounds=rnd, history=history, seconds=time.time() - t0)
         rounded = _rounded_edges(inst)
+        overloaded = _overloaded(inst)
         lower = m.ObjBound          # proven lower bound of this relaxation
         step = {'round': rnd, 'objective': m.ObjVal, 'mip_bound': lower,
                 'network_size': [inst.Ntl.Ntl.number_of_nodes(), inst.Ntl.Ntl.number_of_edges()],
-                'rounded_edges': len(rounded)}
+                'rounded_edges': len(rounded), 'overloaded_stations': sorted(overloaded)}
         history.append(step)
 
-        # A. exact edges: feasible, and optimal since the network is a relaxation
-        if not rounded:
+        # A. exact edges and no charger overloaded at any step (over an interval of
+        # Delta > 1 steps the capacity constraint is aggregated, so exact edges alone do
+        # not make it feasible): feasible, and optimal since the network is a relaxation
+        if not rounded and not overloaded:
             return dict(common, status='feasible (exact edges)', objective=m.ObjVal, lower_bound=lower,
                         optimal=m.Status == gp.GRB.OPTIMAL, solution=_solution(inst), rounded_edges=[],
                         rounds=rnd, history=history, seconds=time.time() - t0)
@@ -216,7 +239,7 @@ def correct_and_resolve(N, parameters, config, ddd_log=None, iteration=None, rou
         if rnd == rounds:
             break
         # correct the lists, then recompute the whole network and the model
-        step['points_added'] = len(_correct(inst.Ntl, rounded))
+        step['points_added'] = len(_correct(inst.Ntl, rounded, overloaded))
         inst.Ntl.construct()
         inst.construct_model()
 
