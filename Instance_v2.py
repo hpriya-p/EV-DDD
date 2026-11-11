@@ -302,6 +302,41 @@ class Instance:
         """
         return min(max(0, min(s + d, b) - max(s, a)) for s in (t_e, t_e + U - 1))
 
+    def _overloaded_chargers(self, x_eners, a_c):
+        """
+        Per-step charger loads of a solution that uses only exact edges.
+
+        Its vehicles leave exactly at the network's times, so every charging session runs
+        over [t_e, t_e + d) drawing charge/d per step. Returns {station: time points}
+        that make the capacity constraints exact wherever a step is overloaded: the
+        overloaded step s, s + 1, and t_e + 1 for each session running at s (so its start
+        is exact). Empty if no station is overloaded.
+        """
+        speed = {q: seg['speed'] for q, seg in self.param['speed_curve'].items()}
+        load = {}      # (i, s) -> chargers' worth of rate in use
+        running = {}   # (i, s) -> start times of the sessions running then
+        for k in range(self.K):
+            for e, f in x_eners[k].items():
+                if self.Ntl.edge_types.get(e) != 'charge':
+                    continue
+                i, t_e, d = e[0][0], e[0][2], self.Ntl.edge_times[e]
+                use = f * self.Ntl.edge_charges[e] / (d * speed[e[0][3]])
+                for s in range(t_e, t_e + d):
+                    load[i, s] = load.get((i, s), 0) + use
+                    running.setdefault((i, s), set()).add(t_e)
+        points = {}
+        for (i, s), l in load.items():
+            chargers = a_c.get(i, 0) + self._existing_chargers.get(i, 0)
+            cap = self.param['charge_rate'][i] * chargers
+            if l > cap + max(1e-6, 1e-4 * cap):   # slack for the MIP's feasibility tolerance
+                points.setdefault(i, set()).update({s, s + 1} | {t + 1 for t in running[i, s]})
+        return points
+
+    def _discretization_size(self):
+        """Changes whenever an update adds a time, a charge level or an edge."""
+        return (sum(len(v) for v in self.Ntl.times.values()) + sum(len(v) for v in self.Ntl.charges.values()),
+                self.Ntl.Ntl.number_of_edges(), getattr(self.Ntl, '_next_key', None))
+
     def __constr_chargecap(self, i, t):
         if i in self.param['charge_nodes']:
             # Existing chargers are free; a_c[i] new chargers of the same power are added.
@@ -805,6 +840,23 @@ class Instance:
                     artificial = sorted({e for k in range(self.K) for e in list(x_loads[k]) + list(x_eners[k])
                                          if not self.Ntl.is_exact(e)}, key=str)
 
+                    # Exact edges are not enough: over an interval of Delta > 1 steps the
+                    # capacity constraint is aggregated, so sessions that really run at the
+                    # same time may share one charger. Check every step; where one is
+                    # overloaded, make the constraints exact there and solve again.
+                    overloaded = self._overloaded_chargers(x_eners, a_) if not artificial and network_is_ddd else {}
+                    if overloaded:
+                        changed = self.Ntl.add_times(overloaded)
+                        if not changed:
+                            raise RuntimeError("charger capacity overloaded in a solution although the "
+                                               f"constraints are exact there: {overloaded}")
+                        if self.verbose:
+                            print(f"Chargers overloaded at stations {sorted(changed)}; refining times there")
+                        self.update_model(penalty=penalty)
+                        n_iter += 1
+                        iter_times.append(time.time() - iter_start)
+                        continue
+
                     if not artificial:
                         if network_is_ddd:
                             if verbose and self.verbose:
@@ -841,20 +893,24 @@ class Instance:
                         iter_times.append(time.time() - iter_start)
                         continue
 
-                    refined = False
+                    before = self._discretization_size()
                     updates = self.Ntl.update_all([[x_loads[k], x_eners[k]] for k in range(self.K)])
                     for new_edge, removed_edge in updates:
-                        refined = refined or new_edge is not None
                         self.penalties[removed_edge] = PEN_CONST if penalty else 0
 
                         if verbose and self.verbose:
                             print("New edge added: ", new_edge, " Edge removed: ", removed_edge)
 
-                    if not refined:
-                        # The update policy found nothing to refine (e.g. a path that runs out of
-                        # battery is cut short and every edge of the shortened path exists), but
-                        # the solution still uses artificial edges: correct those directly.
+                    if self._discretization_size() == before:
+                        # The update policy changed nothing (e.g. a path that runs out of
+                        # battery is cut short, or its first missing edge joins points that are
+                        # already retained), but the solution still uses artificial edges:
+                        # correct those directly. Counting the update as progress would solve
+                        # the same model again.
                         self.Ntl.refine_artificial_edges(artificial)
+                        if self._discretization_size() == before:
+                            raise RuntimeError("Bi-DDD cannot refine: the solution uses artificial edges "
+                                               f"but none adds a point, e.g. {artificial[:3]}")
                     network_is_ddd = 'local_rebuild_update' in self.config
                     self.update_model(penalty=penalty)
 

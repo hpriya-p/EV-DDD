@@ -129,10 +129,6 @@ def test_min_overlap():
     assert mo(0, 5, 1, 0, 5) == 1      # one-step session always inside its own interval
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Bi-DDD stopping rule checks only that the edges used are exact, not per-step charger "
-    "capacity, so it can stop at an infeasible solution (2-7, 3-6); and a refinement that "
-    "adds no point is counted as progress, so DDD can repeat the same solve (3-8)"))
 @pytest.mark.parametrize('trucks, T', [(2, 7), (3, 8), (3, 6)])
 def test_coarse_discretization_reaches_full_optimum(trucks, T):
     """DDD from a coarse grid (step_size 3) ends at the optimum of the full grid (step_size 1)."""

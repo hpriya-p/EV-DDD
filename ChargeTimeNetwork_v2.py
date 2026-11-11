@@ -1099,6 +1099,29 @@ class ChargeTimeNetwork:
         self.rebuild_stations(affected)
         return changed
 
+    def add_times(self, points):
+        """
+        Add time points {station: [t, ...]} (outside [min_time, T-1] ignored) and rebuild
+        the affected stations as refine_artificial_edges does. Returns the stations
+        whose times changed.
+        """
+        changed = set()
+        for i, ts in points.items():
+            new = {int(t) for t in ts if self.param['min_time'] <= t <= self.param['T'] - 1} - set(self.times[i])
+            if new:
+                self.times[i] = sorted(set(self.times[i]) | new)
+                changed.add(i)
+        if not changed:
+            return changed
+        if 'bndry_wait_edges' in self.param:
+            self.construct()
+            return changed
+        affected = set(changed)
+        for i in changed:
+            affected.update(self.N.neighbors(i))
+        self.rebuild_stations(affected)
+        return changed
+
     def rebuild_stations(self, stations):
         """
         Replace the outgoing edges of every network node at the given stations with
