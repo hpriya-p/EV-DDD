@@ -102,7 +102,9 @@ class Instance:
         #   existing_chargers (dict) – (optional) {node: number of chargers already installed};
         #                           they cost nothing, a_c[i] counts the new chargers only (each
         #                           costing stat_cost[i]), and all have the station's power:
-        #                           charging <= Delta * charge_rate[i] * (existing_chargers[i] + a_c[i])
+        #                           charging in segment q <= Delta * charge_rate[i] * speed_q
+        #                           * (existing_chargers[i] + a_c[i]), summed over segments as
+        #                           sum_e charge_e / speed_q(e) <= Delta * charge_rate[i] * chargers
         #   existing_charge_nodes (list) – (optional) existing charging stations; one at a node
         #                           missing from existing_chargers counts as one free charger
         #   surplus_cost  (dict)  – {node: cost}; cost per surplus truck stationed at node
@@ -261,9 +263,12 @@ class Instance:
         else:
             Delta = 1
         if i in self.param['charge_nodes']:
-            # existing chargers are free; a_c[i] new chargers of the same power are added
+            # existing chargers are free; a_c[i] new chargers of the same power are added.
+            # One charger delivers Delta * rate * speed in segment q, so each charging edge
+            # uses (charge / speed of its segment) of the Delta * rate * units available.
             units = self.a_c[i] + self._existing_chargers.get(i, 0)
-            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * units, name='charge_cap[' + str(i) + ',' + str(t) + ']')
+            speed = {q: seg['speed'] for q, seg in self.param['speed_curve'].items()}
+            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] / speed[e[0][3]] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * units, name='charge_cap[' + str(i) + ',' + str(t) + ']')
         else:
             self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
 
