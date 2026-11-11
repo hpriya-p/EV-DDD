@@ -163,7 +163,7 @@ def _compute_node_edges_pessimistic(task):
                     for g2 in sorted(set(charges_i + nb_dH)):
                         if g2 <= g or g2 > UB:
                             continue
-                        t2 = int(np.ceil((g2 - g) / param['charge_rate'][i] * speed_curve[q1]['speed']))
+                        t2 = int(np.ceil((g2 - g) / (param['charge_rate'][i] * speed_curve[q1]['speed'])))
                         if t + t2 < T:
                             emit(v1, i, g2, t + t2, 'charge')
 

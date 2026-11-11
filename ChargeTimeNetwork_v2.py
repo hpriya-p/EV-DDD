@@ -154,7 +154,7 @@ def _compute_node_edges(task):
                     for g2 in charges_i + nb_dH:
                         if g2 <= g or g2 > UB:
                             continue
-                        t2 = int(np.ceil((g2 - g) / param['charge_rate'][i] * speed_curve[q1]['speed']))
+                        t2 = int(np.ceil((g2 - g) / (param['charge_rate'][i] * speed_curve[q1]['speed'])))
                         if t + t2 < T:
                             emit(v1, i, g2, t + t2, 'charge')
 
@@ -700,7 +700,7 @@ class ChargeTimeNetwork:
                     if g2 <= g or g2 > UB:
                         continue 
                     q2 = q1
-                    t2 = np.ceil((g2 - g) / self.param['charge_rate'][i] * self.param['speed_curve'][q1]['speed'])
+                    t2 = np.ceil((g2 - g) / (self.param['charge_rate'][i] * self.param['speed_curve'][q1]['speed']))
                     if t + t2 < self.param['T']:
                         e = self.add_single_edge((i, g, t, q1), (i, g2, t + int(t2), q2), 'charge')
                         edges.append(e)
