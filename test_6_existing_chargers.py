@@ -74,3 +74,89 @@ def test_existing_charge_nodes_alone_count_one_charger():
 def test_capacity_scales_with_speed(trucks, existing, new_chargers):
     a_c, _ = solve(trucks, existing_chargers={1: existing}, speed=2)
     assert a_c == new_chargers
+
+
+# ---------------------------------------------------------------------------
+# Sessions longer than one step (rate 1, speed 1: charging 4 -> 6 takes 2 steps)
+# ---------------------------------------------------------------------------
+
+def solve_two_step(trucks, existing, T, origins_by_truck=None):
+    N = nx.DiGraph()
+    N.add_edge(0, 1, dH=6, dL=3, time=1)
+    N.add_edge(1, 2, dH=6, dL=3, time=1)
+    p = {
+        'T': T, 'L': 10, 'step_size': 1, 'MAX_ITER': 100,
+        'sources': [0], 'sinks': [2], 'D': {(0, 2): trucks},
+        'charge_nodes': [1], 'battery_nodes': [], 'tractor_nodes': [],
+        'charge_rate': {0: 1, 1: 1, 2: 1},
+        'charge_cost': {(i, t): 1 for i in N.nodes for t in range(T)},
+        'stat_cost': {i: STAT_COST for i in N.nodes},
+        'surplus_cost': {i: 0 for i in N.nodes},
+        'tractor_cost': 0, 'battery_cost': 0, 'N_tractors': 0, 'value_for_time': 0,
+        'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 10}},
+        'bat_swap_time': 1, 'tr_swap_time': 1, 'verbose': False,
+        'existing_chargers': {1: existing},
+    }
+    inst = Instance_v2.Instance(N, p, ['heuristic', 'local_rebuild_update'])
+    inst.model.setParam('OutputFlag', 0)
+    inst.model.setParam('MIPGap', 0)
+    soln, val, props = inst.run_DDD(LB=0, LP=False)
+    assert not props.get('timeout'), "DDD did not converge"
+    return round(soln['a_c'].get(1, 0))
+
+
+def test_one_truck_two_step_session_needs_one_charger():
+    # the session spans steps 1 and 2; counting it all in step 1 would need 2 chargers
+    assert solve_two_step(1, existing=1, T=5) == 0
+
+
+def test_overlapping_two_step_sessions_need_two_chargers():
+    # T = 5: both trucks must charge during steps 1-2, at the same time
+    assert solve_two_step(2, existing=1, T=5) == 1
+
+
+def test_consecutive_two_step_sessions_share_one_charger():
+    # T = 7 leaves room for the second truck to charge in steps 3-4 (waiting is free)
+    assert solve_two_step(2, existing=1, T=7) == 0
+
+
+def test_min_overlap():
+    mo = Instance_v2.Instance._min_overlap
+    assert mo(0, 1, 2, 0, 1) == 1      # exact start: covers the step
+    assert mo(0, 1, 2, 2, 3) == 0      # already over
+    assert mo(0, 3, 2, 0, 3) == 1      # start in 0..2: [2, 4) covers only step 2 of [0, 3)
+    assert mo(0, 3, 5, 3, 6) == 2      # start 0 covers 3, 4; start 2 covers 3, 4, 5
+    assert mo(0, 5, 1, 0, 5) == 1      # one-step session always inside its own interval
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "Bi-DDD stopping rule checks only that the edges used are exact, not per-step charger "
+    "capacity, so it can stop at an infeasible solution (2-7, 3-6); and a refinement that "
+    "adds no point is counted as progress, so DDD can repeat the same solve (3-8)"))
+@pytest.mark.parametrize('trucks, T', [(2, 7), (3, 8), (3, 6)])
+def test_coarse_discretization_reaches_full_optimum(trucks, T):
+    """DDD from a coarse grid (step_size 3) ends at the optimum of the full grid (step_size 1)."""
+    def run(step_size):
+        N = nx.DiGraph()
+        N.add_edge(0, 1, dH=6, dL=3, time=1)
+        N.add_edge(1, 2, dH=6, dL=3, time=1)
+        p = {
+            'T': T, 'L': 10, 'step_size': step_size, 'MAX_ITER': 200,
+            'sources': [0], 'sinks': [2], 'D': {(0, 2): trucks},
+            'charge_nodes': [1], 'battery_nodes': [], 'tractor_nodes': [],
+            'charge_rate': {0: 1, 1: 1, 2: 1},
+            'charge_cost': {(i, t): 1 for i in N.nodes for t in range(T)},
+            'stat_cost': {i: STAT_COST for i in N.nodes},
+            'surplus_cost': {i: 0 for i in N.nodes},
+            'tractor_cost': 0, 'battery_cost': 0, 'N_tractors': 0, 'value_for_time': 1,
+            'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 10}},
+            'bat_swap_time': 1, 'tr_swap_time': 1, 'verbose': False,
+            'existing_chargers': {1: 1},
+        }
+        inst = Instance_v2.Instance(N, p, ['heuristic', 'local_rebuild_update'])
+        inst.model.setParam('OutputFlag', 0)
+        inst.model.setParam('MIPGap', 0)
+        _, val, props = inst.run_DDD(LB=0, LP=False)
+        assert not props.get('timeout')
+        return val
+    assert run(3) == pytest.approx(run(1))

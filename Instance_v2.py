@@ -1,4 +1,5 @@
 from ChargeTimeNetwork_v2 import *
+import bisect
 from copy import deepcopy
 import numpy as np
 import gurobipy as gp
@@ -256,19 +257,78 @@ class Instance:
         
 
 
-    def __constr_chargecap(self, i, t):
-        t_index = self.Ntl.times[i].index(t)
+    def _interval_length(self, i, t):
+        """Delta: steps from retained time t at station i to the next one (1 at T-1)."""
+        times = self.Ntl.times[i]
         if t < self.param['T'] - 1:
-            Delta = self.Ntl.times[i][t_index + 1] - self.Ntl.times[i][t_index]
-        else:
-            Delta = 1
+            return times[times.index(t) + 1] - t
+        return 1
+
+    def _charging_sessions(self, i):
+        """
+        Charging edges at station i as (t_e, U, d, use, e), sorted by t_e, where
+          t_e: retained start time; U: number of possible true start times, which lie in
+               [t_e, t_e + U - 1] (U = Delta at t_e, or 1 if the network's starts are exact);
+          d:   duration in steps; the session draws its charge evenly, charge/d per step;
+          use: charger capacity used per step, charge / (d * speed of the edge's segment).
+        Cached per station; the cache is cleared whenever the network changes.
+        """
+        if i in self._sessions:
+            return self._sessions[i]
+        exact = getattr(self.Ntl, 'exact_starts', False)
+        duration = getattr(self.Ntl, 'charge_duration', lambda e: self.Ntl.edge_times[e])
+        speed = {q: seg['speed'] for q, seg in self.param['speed_curve'].items()}
+        sessions = []
+        for t_e in self.Ntl.times[i]:
+            U = 1 if exact else self._interval_length(i, t_e)
+            for g in self.Ntl.charges[i]:
+                v = (i, g, t_e, self.Ntl.get_q(i, g))
+                if v not in self.Ntl.Ntl:
+                    continue
+                for e in self.multi_out_edges(v):
+                    if self.Ntl.edge_types[e] != 'charge':
+                        continue
+                    d = duration(e)
+                    sessions.append((t_e, U, d, self.Ntl.edge_charges[e] / (d * speed[e[0][3]]), e))
+        sessions.sort(key=lambda s: s[0])
+        self._sessions[i] = (sessions, [s[0] for s in sessions], max((s[2] for s in sessions), default=0))
+        return self._sessions[i]
+
+    @staticmethod
+    def _min_overlap(t_e, U, d, a, b):
+        """Fewest steps of [a, b) covered by [s, s + d) over all starts s in [t_e, t_e + U - 1].
+
+        The overlap is a trapezoid in s, so its minimum is at one of the two ends.
+        """
+        return min(max(0, min(s + d, b) - max(s, a)) for s in (t_e, t_e + U - 1))
+
+    def __constr_chargecap(self, i, t):
         if i in self.param['charge_nodes']:
-            # existing chargers are free; a_c[i] new chargers of the same power are added.
-            # One charger delivers Delta * rate * speed in segment q, so each charging edge
-            # uses (charge / speed of its segment) of the Delta * rate * units available.
+            # Existing chargers are free; a_c[i] new chargers of the same power are added.
+            # One charger delivers rate * speed_q per step in segment q, and a charging
+            # session of d steps draws charge/d per step, i.e. it uses charge/(d * speed_q)
+            # of a charger's rate. Over the interval [a, b) to the next retained time, each
+            # session is counted only for the steps it covers whatever its true start in
+            # [t_e, t_e + U - 1] (the minimum overlap): the true load in [a, b) is at least
+            # this, so the network stays a relaxation, and with every time retained it is
+            # the exact per-step constraint. In a network whose vehicles depart exactly at
+            # retained times (exact_starts) no session starts inside an interval, so the
+            # load peaks at its first step and only that step is checked (b = a + 1).
+            exact = getattr(self.Ntl, 'exact_starts', False)
+            a = t
+            b = t + 1 if exact else t + self._interval_length(i, t)
+            sessions, starts, d_max = self._charging_sessions(i)
+            lo = bisect.bisect_right(starts, a - d_max)
+            hi = bisect.bisect_left(starts, b)
+            terms = []
+            for t_e, U, d, use, e in sessions[lo:hi]:
+                m = self._min_overlap(t_e, U, d, a, b)
+                if m > 0:
+                    terms.extend((m * use, self.x_ener[e, k]) for k in range(self.K))
             units = self.a_c[i] + self._existing_chargers.get(i, 0)
-            speed = {q: seg['speed'] for q, seg in self.param['speed_curve'].items()}
-            self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] / speed[e[0][3]] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge')   <= Delta * self.param["charge_rate"][i] * units, name='charge_cap[' + str(i) + ',' + str(t) + ']')
+            self._cons[('charge_cap', i, t)] = self.model.addConstr(
+                gp.quicksum(c * x for c, x in terms) <= (b - a) * self.param["charge_rate"][i] * units,
+                name='charge_cap[' + str(i) + ',' + str(t) + ']')
         else:
             self._cons[('charge_cap', i, t)] = self.model.addConstr(gp.quicksum(self.Ntl.edge_charges[e] * (self.x_ener[e, k]) for k in range(self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i,g))) if self.Ntl.edge_types[e] == 'charge') == 0, name='charge_cap[' + str(i) + ',' + str(t) + ']')
 
@@ -310,6 +370,7 @@ class Instance:
         # constraints through these rather than by name: names embed str(node), which
         # differs between int and np.int64 values of the same node.
         self._cons = dict()
+        self._sessions = dict()   # per-station charging sessions (see _charging_sessions)
         self.x_load = dict()
         self.x_ener = dict()
         #self.D = dict()
@@ -517,7 +578,10 @@ class Instance:
                 self.__constr_end_cond_x(i)
 
         # 7. Update charge cap constraints for affected (i, t) pairs.
-        # Include all times for affected nodes in case new time steps were added.
+        # Include all times for affected nodes in case new time steps were added: a new
+        # time changes Delta, so the possible start times of earlier sessions too.
+        for i in affected_i:
+            self._sessions.pop(i, None)
         affected_it = {(e[0][0], e[0][2]) for e in changed_edges}
         for i in affected_i:
             for t in self.Ntl.times[i]:

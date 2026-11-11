@@ -16,6 +16,9 @@ and extra charge never hurts:
 Costs never undercount: travel time runs to the rounded-up arrival (the real
 wait also costs value_for_time), and the energy bought on a charging edge, for
 its cost and for charger capacity, is the full amount to the true target.
+Charger capacity is checked at every retained time for the sessions running then
+(each drawing its charge evenly over its true duration); between retained times no
+session starts, so the load is highest at those times and every step is within it.
 
 So every feasible solution of the model on this network is feasible for the full
 problem (and, with config 'heuristic', for the heuristic problem, which is a
@@ -199,7 +202,17 @@ class PessimisticChargeTimeNetwork(ChargeTimeNetwork):
 
     Build it from an existing network (for N, parameters and configuration) with
     from_network(); edge_raw[e] keeps each edge's true head (g2_raw, t2_raw).
+
+    Vehicles leave exactly at the retained times here (they arrive no later and wait),
+    so Instance checks charger capacity step by step (exact_starts), with each charging
+    session lasting its true duration.
     """
+
+    exact_starts = True
+
+    def charge_duration(self, e):
+        """True duration of charging edge e: steps from its tail to its unrounded head."""
+        return self.edge_raw[e][1] - e[0][2]
 
     @classmethod
     def from_network(cls, base, times, charges):
