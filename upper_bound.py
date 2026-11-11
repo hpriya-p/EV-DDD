@@ -13,8 +13,8 @@ and extra charge never hurts:
     energy, and if it is in a higher segment it already holds more than any
     target of the modeled (lower) segment;
   - swap edges go to exact retained levels.
-Costs never undercount: travel time runs to the rounded-up arrival (the real
-wait also costs value_for_time), and the energy bought on a charging edge, for
+Costs never undercount: travel time runs to the rounded-up arrival (waiting is
+free, as in the full model), and the energy bought on a charging edge, for
 its cost and for charger capacity, is the full amount to the true target.
 Charger capacity is checked at every retained time for the sessions running then
 (each drawing its charge evenly over its true duration); between retained times no

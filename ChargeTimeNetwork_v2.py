@@ -1012,8 +1012,8 @@ class ChargeTimeNetwork:
         the new charges/times.
 
         Only the outgoing edges of stations whose charges or times changed, and of
-        their neighbours in N, can differ from construct(): every arc into a station
-        starts at the station itself or at a neighbour. Those edges are recomputed
+        the stations with edges into them, can differ from construct(): every arc into
+        a station starts at the station itself or at a predecessor in N. Those edges are recomputed
         with _compute_node_edges, the routine construct() uses, once for all
         commodities.
 
@@ -1045,7 +1045,7 @@ class ChargeTimeNetwork:
         else:
             affected = set(changed)
             for i in changed:
-                affected.update(self.N.neighbors(i))
+                affected.update(self._into(i))
             self.rebuild_stations(affected)
 
         return [(None, None) if r is None else (self.__find_edge(r[0], r[1], r[2]), r[3])
@@ -1099,9 +1099,14 @@ class ChargeTimeNetwork:
         # replaces it with the exact edge.
         affected = changed | sources
         for i in changed:
-            affected.update(self.N.neighbors(i))
+            affected.update(self._into(i))
         self.rebuild_stations(affected)
         return changed
+
+    def _into(self, i):
+        """Stations with edges into station i, whose edge heads round to i's grid: the
+        predecessors in a directed network (N.neighbors gives only successors there)."""
+        return self.N.predecessors(i) if self.N.is_directed() else self.N.neighbors(i)
 
     def add_times(self, points):
         """
@@ -1122,7 +1127,7 @@ class ChargeTimeNetwork:
             return changed
         affected = set(changed)
         for i in changed:
-            affected.update(self.N.neighbors(i))
+            affected.update(self._into(i))
         self.rebuild_stations(affected)
         return changed
 

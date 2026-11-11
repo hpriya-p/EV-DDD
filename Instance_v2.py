@@ -135,14 +135,11 @@ class Instance:
         #                           whole instance to instance_snapshot_<timestamp>.json in
         #                           the cwd (dump_to_json; hundreds of MB on large networks).
         #                           Resuming needs only the ddd_log
-        #   load_time_windows (bool) – (optional, default False) fix x_load[e, k] = 0 on edges
+        #   load_time_windows (bool) – (optional, default True) fix x_load[e, k] = 0 on edges
         #                           the load of k cannot use: leaving a station before k can
         #                           reach it, or too late to reach its destination by T-1
-        #                           (fastest travel times; see _in_time_window). Valid only
-        #                           together with waiting edges whose DDD cost is a lower
-        #                           bound: with waiting edges costed at the full gap to the
-        #                           next retained time, the windows can make the lower bound
-        #                           exceed the optimum (test_7, 2-step legs), so off for now
+        #                           (fastest travel times; see _in_time_window). Never cuts
+        #                           off the image of a feasible solution (waiting is free)
         #   upper_bound   (dict)  – (optional) upper bounds during Bi-DDD and stopping at a gap:
         #                           {'every': 5, 'gap': 0.01, 'pool': 3, 'time_limit': 600,
         #                           'mip_gap': 1e-4, 'design': 'at_least'} (defaults shown).
@@ -544,8 +541,12 @@ class Instance:
 
     def set_objective(self):
         obj_expr = (
+            # waiting costs nothing (the cost of time is for time on the road, and DDD is a
+            # relaxation only if waiting is free); a waiting edge's edge_times is still the
+            # clock advance used when replaying paths
             gp.quicksum(self.x_load[e, k] * self.Ntl.edge_times[e] * self.param['value_for_time']
-                        for e in self.Ntl.Ntl.edges for k in range(self.K))
+                        for e in self.Ntl.Ntl.edges for k in range(self.K)
+                        if self.Ntl.edge_types[e] != 'wait')
             + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])]
                           for e in self.Ntl.Ntl.edges for k in range(self.K) if self.Ntl.edge_charges[e] > 0)
             + gp.quicksum(self.param['stat_cost'][i] * self.a_c[i] for i in self.param['charge_nodes'])
@@ -609,7 +610,7 @@ class Instance:
         latest = self.param.get('latest_origin_time')
         if latest is not None and e[0][0] == self._origins[k] and e[0][2] > latest:
             return 0
-        if self.param.get('load_time_windows', False) and not self._in_time_window(e, k):
+        if self.param.get('load_time_windows', True) and not self._in_time_window(e, k):
             return 0
         return gp.GRB.INFINITY
 
@@ -693,7 +694,7 @@ class Instance:
 
         # Load time windows round the earliest departure down to a retained time, so a
         # new time at a station can tighten the bounds of its existing edges.
-        if self.param.get('load_time_windows', False):
+        if self.param.get('load_time_windows', True):
             for e in current_edges - new_edges:
                 if e[0][0] in affected_i:
                     for k in range(self.K):

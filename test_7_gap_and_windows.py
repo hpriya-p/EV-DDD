@@ -121,10 +121,6 @@ def test_upper_bound_events_logged(tmp_path):
     assert events and all('tried' in r for r in events)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "DDD waiting edges cost the full gap to the next retained time, more than the true wait "
-    "of a schedule mapped onto the coarse network; time windows force such waits, so the "
-    "lower bound exceeds the optimum (here 92 > 62)"))
 def test_time_windows_keep_lower_bound_valid_with_two_step_legs():
     def inst(step, windows):
         N = nx.DiGraph()
@@ -146,3 +142,19 @@ def test_time_windows_keep_lower_bound_valid_with_two_step_legs():
     coarse = inst(3, True)
     coarse.model.optimize()
     assert coarse.model.ObjBound <= opt + 1e-6
+
+
+@pytest.mark.parametrize('iters', [3, 5, 8])
+def test_incremental_network_equals_fresh_build_on_directed_graph(iters):
+    """local_rebuild_update must leave the network construct() would build, including the
+    edges from predecessors into a station whose times changed."""
+    inst = chain_instance(3, 11, 3)
+    inst.param['MAX_ITER'] = iters
+    inst.run_DDD(LB=0, LP=False)
+    fresh = chain_instance(3, 11, 3, initial_discretization={'times': inst.Ntl.times,
+                                                             'charges': inst.Ntl.charges})
+
+    def sig(c):
+        return sorted((tuple(map(int, e[0][:3])), tuple(map(int, e[1][:3])), c.edge_types[e],
+                       int(c.edge_charges[e]), int(c.edge_times[e])) for e in c.Ntl.edges)
+    assert sig(inst.Ntl) == sig(fresh.Ntl)
