@@ -135,6 +135,24 @@ class Instance:
         #                           whole instance to instance_snapshot_<timestamp>.json in
         #                           the cwd (dump_to_json; hundreds of MB on large networks).
         #                           Resuming needs only the ddd_log
+        #   load_time_windows (bool) – (optional, default False) fix x_load[e, k] = 0 on edges
+        #                           the load of k cannot use: leaving a station before k can
+        #                           reach it, or too late to reach its destination by T-1
+        #                           (fastest travel times; see _in_time_window). Valid only
+        #                           together with waiting edges whose DDD cost is a lower
+        #                           bound: with waiting edges costed at the full gap to the
+        #                           next retained time, the windows can make the lower bound
+        #                           exceed the optimum (test_7, 2-step legs), so off for now
+        #   upper_bound   (dict)  – (optional) upper bounds during Bi-DDD and stopping at a gap:
+        #                           {'every': 5, 'gap': 0.01, 'pool': 3, 'time_limit': 600,
+        #                           'mip_gap': 1e-4, 'design': 'at_least'} (defaults shown).
+        #                           Every 'every' iterations, up to 'pool' distinct designs
+        #                           from the relaxation's solution pool are tried on the
+        #                           pessimistic network of the current discretization
+        #                           (upper_bound.py), with the design as a minimum ('at_least')
+        #                           or fixed ('exact'); any solution found is feasible for the
+        #                           full problem. solve() stops when (UB - LB) / UB <= 'gap'
+        #                           and returns the best such solution
         #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
         #                           one record per DDD iteration and a final record with the
         #                           solution; read it back with read_ddd_log
@@ -332,6 +350,47 @@ class Instance:
                 points.setdefault(i, set()).update({s, s + 1} | {t + 1 for t in running[i, s]})
         return points
 
+    def _pool_designs(self, M, limit):
+        """Distinct designs (a_c, a_s, n, z) of up to `limit` solutions in M's solution pool."""
+        designs = []
+        for s in range(min(M.SolCount, limit)):
+            M.Params.SolutionNumber = s
+            d = {name: {int(i): round(x.Xn) for i, x in var.items() if x.Xn > 0.5}
+                 for name, var in (('a_c', self.a_c), ('a_s', self.a_s), ('n', self.n), ('z', self.z))}
+            if d not in designs:
+                designs.append(d)
+        M.Params.SolutionNumber = 0
+        return designs
+
+    def _upper_bound_step(self, M, cfg):
+        """
+        Try the pool's designs on the pessimistic network of the current discretization
+        (see the 'upper_bound' parameter). Returns the best result of upper_bound_on_instance
+        that has a solution, or None. The model is built on a copy of this instance, so a
+        subclass's construct_model (e.g. a base design) applies to it too.
+        """
+        from upper_bound import upper_bound_on_instance
+        best, tried = None, []
+        skip = {'model', 'x_load', 'x_ener', '_cons', '_sessions', 'n', 'a_c', 'a_s', 'z', 'a'}
+        for design in self._pool_designs(M, cfg.get('pool', 3)):
+            probe = object.__new__(type(self))
+            probe.__dict__.update({k: v for k, v in self.__dict__.items() if k not in skip})
+            probe.param = {k: v for k, v in self.param.items() if k not in ('upper_bound', 'ddd_log')}
+            t0 = time.time()
+            try:
+                res = upper_bound_on_instance(probe, self.Ntl.times, self.Ntl.charges,
+                                              time_limit=cfg.get('time_limit', 600),
+                                              mip_gap=cfg.get('mip_gap', 1e-4),
+                                              threads=getattr(self, '_threads', 0),
+                                              fixed_design=design, design_mode=cfg.get('design', 'at_least'))
+            except gp.GurobiError as err:          # e.g. out of memory: keep going without a bound
+                res = {'status': f'gurobi error: {err}', 'upper_bound': None}
+            tried.append({'status': res['status'], 'upper_bound': res['upper_bound'],
+                          'seconds': time.time() - t0})
+            if res['upper_bound'] is not None and (best is None or res['upper_bound'] < best['upper_bound']):
+                best = res
+        return best, tried
+
     def _discretization_size(self):
         """Changes whenever an update adds a time, a charge level or an edge."""
         return (sum(len(v) for v in self.Ntl.times.values()) + sum(len(v) for v in self.Ntl.charges.values()),
@@ -414,6 +473,7 @@ class Instance:
             self.K = len(self.param['D'])
         # origin of each commodity, in the order of param['D'] (as in __constr_demand)
         self._origins = [nodes[0] for nodes in self.param['D'].keys()] if 'D' in self.param else []
+        self._compute_time_windows()
         # for i in self.param['sources']:
         #     self.D[i] = self.model.addVar(lb=0, name=f"D[{i}]")
         # for i in self.param['sinks']:
@@ -549,7 +609,46 @@ class Instance:
         latest = self.param.get('latest_origin_time')
         if latest is not None and e[0][0] == self._origins[k] and e[0][2] > latest:
             return 0
+        if self.param.get('load_time_windows', False) and not self._in_time_window(e, k):
+            return 0
         return gp.GRB.INFINITY
+
+    def _compute_time_windows(self):
+        """Fastest travel times (edge attribute 'time', ignoring charging) from each
+        commodity's origin and to its destination: self._win[k] = (from_o, to_z)."""
+        rev = self.N.reverse(copy=False) if self.N.is_directed() else self.N
+        self._win = []
+        for (o, z) in (self.param.get('D') or {}):
+            self._win.append((nx.single_source_dijkstra_path_length(self.N, o, weight='time'),
+                              nx.single_source_dijkstra_path_length(rev, z, weight='time')))
+
+    def _in_time_window(self, e, k):
+        """
+        Whether the load of commodity k may use edge e (per-commodity network, as in
+        condition (6) of Shu, Xu and Baldacci). The load is at the origin o_k from
+        min_time and must reach the destination z_k by T-1, and moving between stations
+        takes at least the fastest travel time. So it can leave station i at a true time
+        s only if min_time + phi(o_k, i) <= s, and must still reach z_k from the head j:
+        s + duration(e) + phi(j, z_k) <= T-1. A network edge leaves at the retained time
+        t = (s rounded down), so the tests are: t is at least min_time + phi(o_k, i)
+        rounded down to a retained time of i, and t + duration + phi(j, z_k) <= T-1.
+        Both hold for the image of every feasible solution, so the network stays a
+        relaxation. Waiting edges have duration 0 here (their stored time is not a true
+        duration in the coarse network).
+        """
+        (i, _, t, _), (j, _, _, _) = e[0], e[1]
+        if isinstance(i, str) or isinstance(j, str):
+            return True                      # boundary dummy nodes
+        from_o, to_z = self._win[k]
+        if i not in from_o or j not in to_z:
+            return False                     # i unreachable from o_k, or z_k from j
+        earliest = self.param['min_time'] + from_o[i]
+        times = self.Ntl.times[i]
+        pos = bisect.bisect_right(times, earliest)
+        if pos > 0 and t < times[pos - 1]:
+            return False
+        duration = 0 if self.Ntl.edge_types[e] == 'wait' else self.Ntl.edge_times[e]
+        return t + duration + to_z[j] <= self.param['T'] - 1
 
     def _remove_constr(self, key):
         c = self._cons.pop(key, None)
@@ -591,6 +690,14 @@ class Instance:
         changed_edges   = new_edges | removed_edges
         affected_vnodes = {e[0] for e in changed_edges} | {e[1] for e in changed_edges}
         affected_i      = {v[0] for v in affected_vnodes}
+
+        # Load time windows round the earliest departure down to a retained time, so a
+        # new time at a station can tighten the bounds of its existing edges.
+        if self.param.get('load_time_windows', False):
+            for e in current_edges - new_edges:
+                if e[0][0] in affected_i:
+                    for k in range(self.K):
+                        self.x_load[e, k].ub = self._load_ub(e, k)
 
         # 5. Update flow balance constraints for affected network nodes
         for v in affected_vnodes:
@@ -748,6 +855,8 @@ class Instance:
                       mode='w')
 
         last_valid_bound = None
+        ub_cfg = self.param.get('upper_bound')
+        best_ub = None          # best result of _upper_bound_step: a feasible solution of the full problem
         # optional fast first phase (see 'fast_update'): the configured policy is restored,
         # with a full rebuild, once the elapsed time reaches fast['seconds']
         fast = self.param.get('fast_update')
@@ -832,6 +941,33 @@ class Instance:
 
                     iter_graph_sizes.append((len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)))
 
+                    # Upper bound and stopping at a gap (see 'upper_bound'), as in the DDD of
+                    # Shu, Xu and Baldacci: designs from the relaxation's pool are operated on the
+                    # pessimistic network, whose solutions are feasible for the full problem.
+                    if ub_cfg and not LP_relax and n_iter % ub_cfg.get('every', 5) == 0:
+                        t_ub = time.time()
+                        res, tried = self._upper_bound_step(M, ub_cfg)
+                        if res is not None and (best_ub is None or res['upper_bound'] < best_ub['upper_bound']):
+                            best_ub = dict(res, iteration=n_iter)
+                        ub = best_ub['upper_bound'] if best_ub else None
+                        gap = (ub - last_valid_bound) / ub if (ub and last_valid_bound is not None) else None
+                        self._log_ddd({'event': 'upper_bound', 'iteration': n_iter, 'tried': tried,
+                                       'upper_bound': ub, 'lower_bound': last_valid_bound, 'gap': gap,
+                                       'seconds': time.time() - t_ub, 'elapsed': time.time() - solve_start})
+                        if gap is not None and gap <= ub_cfg.get('gap', 0.01):
+                            soln = dict(best_ub['solution'], found_at_iteration=best_ub['iteration'])
+                            self._log_ddd({'event': 'final', 'status': 'gap', 'iteration': n_iter,
+                                           'objective': ub, 'lower_bound': last_valid_bound, 'gap': gap,
+                                           'num_edges': len(self.Ntl.Ntl.edges),
+                                           'elapsed': time.time() - solve_start,
+                                           'times': self.Ntl.times, 'charges': self.Ntl.charges,
+                                           'solution': soln})
+                            iter_times.append(time.time() - iter_start)
+                            return soln, ub, {'n_iterations': n_iter, 'stopped_by': 'gap',
+                                              'upper_bound': ub, 'lower_bound': last_valid_bound, 'gap': gap,
+                                              'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)),
+                                              'avg_time_per_iter': sum(iter_times) / len(iter_times)}
+
                     # Termination (Algorithm 1): the solution extends to a feasible solution of
                     # the full charge-time network if every edge carrying load or energy flow is
                     # exact, since exact edges are edges of the full network with the same costs.
@@ -880,7 +1016,7 @@ class Instance:
                                            'elapsed': time.time() - solve_start,
                                            'times': self.Ntl.times, 'charges': self.Ntl.charges,
                                            'solution': dict(soln, z=z_)})
-                            return soln, M.ObjVal, {'n_iterations': n_iter, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+                            return soln, M.ObjVal, {'n_iterations': n_iter, 'stopped_by': 'converged', 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
                         # The older update policies can leave a network that is not a relaxation,
                         # so this solution may not be optimal: rebuild the DDD network for the
                         # current discretization, re-solve, and test the new solution.
@@ -938,14 +1074,20 @@ class Instance:
             if _interrupted and self.param.get('snapshot_on_interrupt'):
                 self.dump_to_json()
 
+        ub = best_ub['upper_bound'] if best_ub else None
+        gap = (ub - last_valid_bound) / ub if (ub and last_valid_bound is not None) else None
         self._log_ddd({'event': 'final', 'status': 'interrupted' if _interrupted else 'max_iter',
                        'iteration': n_iter, 'objective': curr_LB, 'lower_bound': last_bound,
+                       'upper_bound': ub, 'gap': gap,
                        'num_edges': len(self.Ntl.Ntl.edges),
-                       'elapsed': time.time() - solve_start, 'solution': None})
+                       'elapsed': time.time() - solve_start, 'solution': None,
+                       'upper_bound_solution': best_ub['solution'] if best_ub else None})
         avg_time = sum(iter_times) / len(iter_times) if iter_times else 0
         avg_nodes = sum(s[0] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
         avg_edges = sum(s[1] for s in iter_graph_sizes) / len(iter_graph_sizes) if iter_graph_sizes else 0
-        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
+        return {'x_load': {}, 'x_ener':{}, 'a': {}, 'n':{}}, curr_LB, {'n_iterations': n_iter, 'timeout':True,
+                'upper_bound': ub, 'lower_bound': last_valid_bound, 'gap': gap,
+                'upper_bound_solution': best_ub['solution'] if best_ub else None, 'size_of_graph': (len(self.Ntl.Ntl.nodes), len(self.Ntl.Ntl.edges)), 'avg_time_per_iter': avg_time, 'avg_graph_size_per_iter': (avg_nodes, avg_edges)}
 
 
     """

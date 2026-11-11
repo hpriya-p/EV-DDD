@@ -152,7 +152,9 @@ def _compute_node_edges(task):
                             emit(v1, i, g2, t + 1, 'charge')
                 else:
                     nb_dH = [dH for _, dH, _, _ in neighbors]
-                    for g2 in charges_i + nb_dH:
+                    # increasing targets: when two targets round to the same head node, emit
+                    # keeps the first, which must be the one needing the least energy and time
+                    for g2 in sorted(set(charges_i + nb_dH)):
                         if g2 <= g or g2 > UB:
                             continue
                         t2 = int(np.ceil((g2 - g) / (param['charge_rate'][i] * speed_curve[q1]['speed'])))
@@ -697,7 +699,8 @@ class ChargeTimeNetwork:
                         edges.append(e)
             else:
                 # only create arcs corresponding to charging to full or charging just enough
-                for g2 in self.charges[i] + [self.N[i][j]['dH'] for j in self.N.neighbors(i)]:
+                # increasing targets, so the cheapest of those rounding to one head is kept
+                for g2 in sorted(set(self.charges[i] + [self.N[i][j]['dH'] for j in self.N.neighbors(i)])):
                     if g2 <= g or g2 > UB:
                         continue 
                     q2 = q1

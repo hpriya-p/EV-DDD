@@ -271,16 +271,18 @@ def _solution(inst):
 
 
 def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4, threads=0,
-                            output=False, fixed_design=None):
+                            output=False, fixed_design=None, design_mode='exact'):
     """
     Upper bound for an existing Instance: its network is replaced by the pessimistic
     network of the given discretization and the model is rebuilt and solved once.
     Any settings that inst applies in construct_model (e.g. a fixed design) carry over.
 
     fixed_design: optional {'a_c': {i: v}, 'a_s': {...}, 'n': {...}, 'z': {...}} ('a' is read
-    as a_c); every a_c, a_s, n, z is then fixed to exactly that value (0 where absent), so the
-    solve asks whether that design can be operated feasibly (and at what cost).
+    as a_c). With design_mode 'exact', every a_c, a_s, n, z is fixed to exactly that value (0
+    where absent), so the solve asks whether that design can be operated feasibly (and at
+    what cost); with 'at_least', the values are lower bounds and more may be installed.
     """
+    assert design_mode in ('exact', 'at_least'), design_mode
     t0 = time.time()
     inst.Ntl = PessimisticChargeTimeNetwork.from_network(inst.Ntl, times, charges)
     inst.construct_model()
@@ -291,7 +293,11 @@ def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4,
                 given = fixed_design.get('a')            # older name
             values = {int(i): v for i, v in (given or {}).items()}
             for i, x in var.items():
-                x.lb = x.ub = values.get(int(i), 0)
+                v = values.get(int(i), 0)
+                if design_mode == 'exact':
+                    x.lb = x.ub = v
+                else:
+                    x.lb = max(x.lb, min(v, x.ub))
         inst.model.update()
     m = inst.model
     m.setParam('OutputFlag', 1 if output else 0)
