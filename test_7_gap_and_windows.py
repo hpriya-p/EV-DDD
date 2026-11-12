@@ -204,7 +204,8 @@ def test_earliest_arrival_by_charging_and_by_swapping_separately():
     # swapping only: no swap at 1, so the truck (4 left at 1) cannot reach 2
     assert 3 not in by_swapping and 2 not in by_swapping
     pts = significant_times(N, p)
-    assert 11 in pts[3] and 4 in pts[2]
+    # combined search: charge at 1, swap at 2 (arrive 4 with 0, swap until 6), reach 3 at 7
+    assert 7 in pts[3] and 4 in pts[2]
 
 
 def test_latest_departures_and_departures_after_charging():
@@ -223,5 +224,5 @@ def test_latest_departures_and_departures_after_charging():
     assert by_charging[1] == 19 - 4 and by_swapping[1] == 19 - 4
     assert by_charging[2] == 18 and by_charging[3] == 19
     pts = significant_times(N, p)
-    # at 1 the truck arrives at 1 with 4: holds 6 (enough for the leg to 2) at 3, and 10 at 7
-    assert {1, 3, 7, 15}.issubset(pts[1])
+    # at 1 the truck arrives at 1 with 4 and is full at 7 (only the full target is kept)
+    assert {1, 7, 15}.issubset(pts[1]) and 3 not in pts[1]

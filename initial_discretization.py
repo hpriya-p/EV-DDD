@@ -6,28 +6,24 @@ times at which the commodity's load can first be at i and must last leave i, in 
 spirit of the significant time points of Shu, Xu and Baldacci (Section 5.2).
 
 The times come from shortest-time searches over (station, battery level) states for a
-loaded truck (consumption dH), with one way to recharge at a time:
-  charging only  at charge nodes, ceil(rate * speed) levels per step within a segment
-                 (never slower than either network allows);
-  swapping only  at swap nodes, to a full battery in the swap time.
+loaded truck (consumption dH) that may recharge by charging at charge nodes
+(ceil(rate * speed) levels per step within a segment, never slower than either network
+allows) and by swapping at swap nodes (to a full battery in the swap time).
 
-Points, for each commodity k, station i and mode m (charging only, swapping only):
+Points, for each commodity k and station i:
   * earliest arrival: the truck leaves o_k full at min_time; the earliest time it can
     be at i;
   * latest departure: the latest time it can leave i (full, which is never worse) and
     still reach z_k by T - 1;
-  * earliest departure after charging at i (charging only, at charge nodes): for each
-    target used by the heuristic network, i.e. just enough for each leg out of i (its
-    dH) and full (L), the earliest time the truck can be at i holding at least that
-    much, when that is later than its earliest arrival;
-and, from travel times alone (no recharging), the earliest arrival min_time + phi(o_k, i),
-which the load time windows round (Instance._in_time_window), and the latest
-departure T - 1 - phi(i, z_k).
+  * at charge nodes, the earliest time the truck can be at i with a full battery, when
+    that is later than its earliest arrival (the heuristic network's "charge to full").
+Points are added only where the window is non-empty (earliest arrival no later than
+latest departure). Any set of points containing min_time and T - 1 gives a valid DDD
+network, so these only change how fast Bi-DDD converges, never its result.
 
-A mode's points are added only where its window at i is non-empty (earliest arrival
-no later than latest departure); the travel-time points only where some mode's window
-is. Any set of points containing min_time and T - 1 gives a valid DDD network, so these
-only change how fast Bi-DDD converges, never its result.
+Earlier versions also added the travel-time window ends, separate points for charging
+only and swapping only, and a departure for each leg out of a charge node; that gave
+about twice the edges of the uniform grid on the full case study.
 
 Use:
     from initial_discretization import significant_times
@@ -149,15 +145,14 @@ def latest_departure(N, params, dest, charge=True, swap=True):
             if g == L and T - 1 - d >= params.get('min_time', 0)}
 
 
-def departures_after_charging(N, params, i, forward):
+def departures_after_charging(N, params, i, forward, targets=None):
     """Earliest times at which the truck can be at charge node i holding at least each
-    heuristic target (dH of each leg out of i, and L), from a charging-only `forward`."""
+    target level (default: L, a full battery), from a `forward` search."""
     at_i = {g: t for (j, g), t in forward.items() if j == i}
     if not at_i:
         return set()
-    targets = {N[i][j]['dH'] for j in _out(N, i)} | {params['L']}
     times = set()
-    for target in targets:
+    for target in (targets or {params['L']}):
         reach = [t for g, t in at_i.items() if g >= target]
         if reach:
             times.add(min(reach))
@@ -167,31 +162,19 @@ def departures_after_charging(N, params, i, forward):
 def significant_times(N, params):
     """{station: sorted time points} from every commodity's window (see the module docstring)."""
     T, t0 = params['T'], params.get('min_time', 0)
-    rev = N.reverse(copy=False) if N.is_directed() else N
     charge_nodes = set(params['charge_nodes'])
     points = {i: set() for i in N.nodes}
     for (o, z) in params['D']:
-        travel_from = nx.single_source_dijkstra_path_length(N, o, weight='time')
-        travel_to = nx.single_source_dijkstra_path_length(rev, z, weight='time')
-        modes = {}
-        for name, charge, swap in (('charging', True, False), ('swapping', False, True)):
-            fwd = _forward(N, params, o, charge, swap)
-            arrive = {}
-            for (i, _), t in fwd.items():
-                arrive[i] = min(arrive.get(i, math.inf), t)
-            modes[name] = (fwd, arrive, latest_departure(N, params, z, charge, swap))
+        fwd = _forward(N, params, o, charge=True, swap=True)
+        arrive = {}
+        for (i, _), t in fwd.items():
+            arrive[i] = min(arrive.get(i, math.inf), t)
+        leave = latest_departure(N, params, z, charge=True, swap=True)
         for i in N.nodes:
-            if i not in travel_from or i not in travel_to:
-                continue                                    # k cannot pass through i
-            open_window = False
-            for name, (fwd, arrive, leave) in modes.items():
-                if i not in arrive or i not in leave or arrive[i] > leave[i]:
-                    continue                                # no time in this mode
-                open_window = True
-                points[i].update({arrive[i], leave[i]})
-                if name == 'charging' and i in charge_nodes:
-                    points[i].update(t for t in departures_after_charging(N, params, i, fwd)
-                                     if arrive[i] < t <= leave[i])
-            if open_window:
-                points[i].update({t0 + travel_from[i], T - 1 - travel_to[i]})
+            if i not in arrive or i not in leave or arrive[i] > leave[i]:
+                continue                                    # no time at which k can be at i
+            points[i].update({arrive[i], leave[i]})
+            if i in charge_nodes:
+                points[i].update(t for t in departures_after_charging(N, params, i, fwd)
+                                 if arrive[i] < t <= leave[i])
     return {i: sorted(int(t) for t in ts if t0 <= t <= T - 1) for i, ts in points.items() if ts}
