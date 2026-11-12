@@ -253,6 +253,23 @@ def test_mip_gap_schedule(tmp_path):
     inst = chain_instance(2, 7, 3, mip_gap_schedule=[[0, 0.3], [10**9, 0.01]], ddd_log=str(log))
     inst.run_DDD(LB=0, LP=False)
     gaps = [r['mip_gap'] for r in Instance_v2.read_ddd_log(str(log)) if r['event'] == 'iteration']
-    assert gaps and all(g == pytest.approx(0.3) for g in gaps)
+    # 30% until it converges, then (the schedule's tightest gap being 1%) re-solved at 1%
+    assert gaps and gaps[0] == pytest.approx(0.3) and gaps[-1] == pytest.approx(0.01)
+    assert all(g in (pytest.approx(0.3), pytest.approx(0.01)) for g in gaps)
     assert inst._scheduled_mip_gap(0) == 0.3 and inst._scheduled_mip_gap(10**9) == 0.01
     assert inst._scheduled_mip_gap(-1) is None
+
+
+def test_converged_at_loose_gap_is_resolved_at_final_gap(tmp_path):
+    """With the schedule at 30% throughout and a final gap of 0, a solution that converges at
+    30% is re-solved at 0, and the result is the optimum."""
+    _, opt, _ = solve(chain_instance(3, 8, 1))
+    log = tmp_path / 'ddd.jsonl'
+    inst = chain_instance(3, 8, 3, mip_gap_schedule=[[0, 0.3]], final_mip_gap=0.0, ddd_log=str(log))
+    _, val, props = inst.run_DDD(LB=0, LP=False)
+    recs = Instance_v2.read_ddd_log(str(log))
+    assert any(r['event'] == 'tighten_mip_gap' for r in recs)
+    assert props.get('stopped_by') == 'converged'
+    assert val == pytest.approx(opt)
+    last = [r for r in recs if r['event'] == 'iteration'][-1]
+    assert last['mip_gap'] == pytest.approx(0.0)

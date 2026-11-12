@@ -127,7 +127,12 @@ class Instance:
         #                           its MIPGap is the gap of the last entry whose seconds the
         #                           solve's elapsed time (counting earlier attempts of a resumed
         #                           run) has reached, e.g. [[0, 0.2], [36000, 0.05]]. The
-        #                           lower bound is Gurobi's proven bound, valid at any gap
+        #                           lower bound is Gurobi's proven bound, valid at any gap.
+        #                           A solution that converges at a looser gap than the
+        #                           tightest one (or 'final_mip_gap') is not accepted: the same
+        #                           network is solved again at that gap, which is kept from then on
+        #   final_mip_gap (float) – (optional) the gap a converged solution must be certified at
+        #                           (default: the tightest gap of mip_gap_schedule)
         #   fast_update   (dict)  – (optional) {'policy': 'simple_update', 'seconds': 18000}: use
         #                           this faster update policy until the solve's elapsed time
         #                           (counting earlier attempts of a resumed run) reaches
@@ -351,6 +356,14 @@ class Instance:
             if l > cap + max(1e-6, 1e-4 * cap):   # slack for the MIP's feasibility tolerance
                 points.setdefault(i, set()).update({s, s + 1} | {t + 1 for t in running[i, s]})
         return points
+
+    def _final_mip_gap(self):
+        """Gap a converged solution must be certified at: 'final_mip_gap', else the tightest
+        gap of 'mip_gap_schedule', else None (no re-solve)."""
+        if self.param.get('final_mip_gap') is not None:
+            return self.param['final_mip_gap']
+        schedule = self.param.get('mip_gap_schedule')
+        return min(g for _, g in schedule) if schedule else None
 
     def _scheduled_mip_gap(self, elapsed):
         """MIPGap for a relaxation solved after `elapsed` seconds ('mip_gap_schedule'), or None."""
@@ -871,6 +884,10 @@ class Instance:
         last_valid_bound = None
         ub_cfg = self.param.get('upper_bound')
         best_ub = None          # best result of _upper_bound_step: a feasible solution of the full problem
+        # MIP gap a converged solution must be certified at ('final_mip_gap', or the tightest gap
+        # of 'mip_gap_schedule'); once a solution converges at a looser gap, the gap is held here
+        final_gap = self._final_mip_gap()
+        tightened = False
         # optional fast first phase (see 'fast_update'): the configured policy is restored,
         # with a full rebuild, once the elapsed time reaches fast['seconds']
         fast = self.param.get('fast_update')
@@ -905,7 +922,7 @@ class Instance:
 
                     # MIP gap by elapsed solve time (see 'mip_gap_schedule'); the proven bound
                     # (ObjBound) stays a valid lower bound whatever the gap
-                    gap_now = self._scheduled_mip_gap(time.time() - solve_start)
+                    gap_now = final_gap if tightened else self._scheduled_mip_gap(time.time() - solve_start)
                     if gap_now is not None:
                         M.setParam('MIPGap', gap_now)
 
@@ -1010,6 +1027,21 @@ class Instance:
                         if self.verbose:
                             print(f"Chargers overloaded at stations {sorted(changed)}; refining times there")
                         self.update_model(penalty=penalty)
+                        n_iter += 1
+                        iter_times.append(time.time() - iter_start)
+                        continue
+
+                    if not artificial and network_is_ddd and final_gap is not None \
+                            and M.Params.MIPGap > final_gap + 1e-12:
+                        # The solution is feasible, but the relaxation was solved only to a loose
+                        # gap, so it is certified only to that gap: solve the same network again
+                        # at the final gap, and keep that gap from now on.
+                        self._log_ddd({'event': 'tighten_mip_gap', 'iteration': n_iter,
+                                       'from': M.Params.MIPGap, 'to': final_gap,
+                                       'objective': M.ObjVal, 'elapsed': time.time() - solve_start})
+                        if self.verbose:
+                            print(f"Converged at MIP gap {M.Params.MIPGap:g}; re-solving at {final_gap:g}")
+                        tightened = True
                         n_iter += 1
                         iter_times.append(time.time() - iter_start)
                         continue
