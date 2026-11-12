@@ -158,3 +158,28 @@ def test_incremental_network_equals_fresh_build_on_directed_graph(iters):
         return sorted((tuple(map(int, e[0][:3])), tuple(map(int, e[1][:3])), c.edge_types[e],
                        int(c.edge_charges[e]), int(c.edge_times[e])) for e in c.Ntl.edges)
     assert sig(inst.Ntl) == sig(fresh.Ntl)
+
+
+# ---------------------------------------------------------------------------
+# Initial time points from the commodities' windows
+# ---------------------------------------------------------------------------
+
+def test_significant_times_on_line():
+    from initial_discretization import significant_times
+    inst = line_instance(T=9, step_size=1)
+    pts = significant_times(inst.N, inst.param)
+    # commodity 0 (0 -> 3): earliest at station 2 is 2 by travel and with charging (4 + 4 <= 10)
+    assert 2 in pts[2]
+    # latest departure from station 2 towards 3: T - 1 - 1 = 7
+    assert 7 in pts[2]
+    assert all(0 <= t <= 8 for ts in pts.values() for t in ts)
+
+
+@pytest.mark.parametrize('T, trucks', [(7, (2, 1)), (9, (1, 2)), (9, (2, 1))])
+def test_significant_times_keep_the_optimum(T, trucks):
+    from initial_discretization import significant_times
+    _, opt, _ = solve(line_instance(T, 1, trucks))
+    probe = line_instance(T, T, trucks)
+    pts = significant_times(probe.N, probe.param)
+    _, val, _ = solve(line_instance(T, T, trucks, initial_discretization={'times': pts}))
+    assert val == pytest.approx(opt)
