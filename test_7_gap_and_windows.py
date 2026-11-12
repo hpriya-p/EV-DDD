@@ -205,3 +205,23 @@ def test_earliest_arrival_by_charging_and_by_swapping_separately():
     assert 3 not in by_swapping and 2 not in by_swapping
     pts = significant_times(N, p)
     assert 11 in pts[3] and 4 in pts[2]
+
+
+def test_latest_departures_and_departures_after_charging():
+    """Same chain (T = 20): charge at 1 and 2, swap at 2 (2 steps); legs of 6 of 10."""
+    from initial_discretization import latest_departure, significant_times
+    N = nx.DiGraph()
+    for i in range(3):
+        N.add_edge(i, i + 1, dH=6, dL=3, time=1)
+    p = {'T': 20, 'L': 10, 'min_time': 0, 'D': {(0, 3): 1},
+         'charge_nodes': [1, 2], 'battery_nodes': [2], 'tractor_nodes': [],
+         'charge_rate': {i: 1 for i in N.nodes}, 'bat_swap_time': 2, 'tr_swap_time': 2,
+         'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 10}}}
+    by_charging = latest_departure(N, p, 3, charge=True, swap=False)
+    by_swapping = latest_departure(N, p, 3, charge=False, swap=True)
+    # leaving 1 full: -> 2 (1 step) with 4, recharge 2 levels (2 steps) or swap (2 steps), -> 3 (1)
+    assert by_charging[1] == 19 - 4 and by_swapping[1] == 19 - 4
+    assert by_charging[2] == 18 and by_charging[3] == 19
+    pts = significant_times(N, p)
+    # at 1 the truck arrives at 1 with 4: holds 6 (enough for the leg to 2) at 3, and 10 at 7
+    assert {1, 3, 7, 15}.issubset(pts[1])
