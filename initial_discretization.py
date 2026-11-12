@@ -18,7 +18,8 @@ Points, for each commodity k and station i:
   * at charge nodes, the earliest time the truck can be at i with a full battery, when
     that is later than its earliest arrival (the heuristic network's "charge to full").
 Points are added only where the window is non-empty (earliest arrival no later than
-latest departure). Any set of points containing min_time and T - 1 gives a valid DDD
+latest departure), and, with max_detour, only at stations on a schedule at most that many
+steps slower than the commodity's fastest (through_times). Any set of points containing min_time and T - 1 gives a valid DDD
 network, so these only change how fast Bi-DDD converges, never its result.
 
 Earlier versions also added the travel-time window ends, separate points for charging
@@ -159,8 +160,28 @@ def departures_after_charging(N, params, i, forward, targets=None):
     return times
 
 
-def significant_times(N, params):
-    """{station: sorted time points} from every commodity's window (see the module docstring)."""
+def through_times(N, params, origin, dest, forward=None):
+    """{station: duration of the fastest schedule from `origin` (full, at min_time) to `dest`
+    that passes through it}, respecting the battery: the minimum over battery levels g of
+    the earliest time at (station, g) plus the fastest time from (station, g) to `dest`,
+    minus min_time. Charging and swapping are both allowed."""
+    t0 = params.get('min_time', 0)
+    fwd = forward if forward is not None else _forward(N, params, origin, charge=True, swap=True)
+    togo = _backward(N, params, dest, charge=True, swap=True)
+    best = {}
+    for (i, g), t in fwd.items():
+        if (i, g) in togo:
+            best[i] = min(best.get(i, math.inf), t - t0 + togo[(i, g)])
+    return best
+
+
+def significant_times(N, params, max_detour=None):
+    """{station: sorted time points} from every commodity's window (see the module docstring).
+
+    max_detour: if set (in time steps), a commodity's points are added only at stations
+    on a schedule at most max_detour steps slower than its fastest one, i.e. where
+    through_times <= fastest + max_detour; other stations keep only the base grid.
+    """
     T, t0 = params['T'], params.get('min_time', 0)
     charge_nodes = set(params['charge_nodes'])
     points = {i: set() for i in N.nodes}
@@ -170,7 +191,16 @@ def significant_times(N, params):
         for (i, _), t in fwd.items():
             arrive[i] = min(arrive.get(i, math.inf), t)
         leave = latest_departure(N, params, z, charge=True, swap=True)
+        near = None
+        if max_detour is not None:
+            through = through_times(N, params, o, z, forward=fwd)
+            if not through:
+                continue                                    # z unreachable: no points
+            fastest = min(through.values())
+            near = {i for i, d in through.items() if d <= fastest + max_detour}
         for i in N.nodes:
+            if near is not None and i not in near:
+                continue                                    # far from k's fastest schedules
             if i not in arrive or i not in leave or arrive[i] > leave[i]:
                 continue                                    # no time at which k can be at i
             points[i].update({arrive[i], leave[i]})

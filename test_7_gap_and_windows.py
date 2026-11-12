@@ -226,3 +226,22 @@ def test_latest_departures_and_departures_after_charging():
     pts = significant_times(N, p)
     # at 1 the truck arrives at 1 with 4 and is full at 7 (only the full target is kept)
     assert {1, 7, 15}.issubset(pts[1]) and 3 not in pts[1]
+
+
+def test_max_detour_keeps_points_near_fastest_route():
+    """Diamond 0 -> {1, 2} -> 3: via 1 takes 2 steps, via 2 takes 6. With max_detour 0 only
+    stations on the fastest schedule (0, 1, 3) get points; with 4, station 2 too."""
+    from initial_discretization import significant_times, through_times
+    N = nx.DiGraph()
+    N.add_edge(0, 1, dH=2, dL=1, time=1)
+    N.add_edge(1, 3, dH=2, dL=1, time=1)
+    N.add_edge(0, 2, dH=2, dL=1, time=3)
+    N.add_edge(2, 3, dH=2, dL=1, time=3)
+    p = {'T': 20, 'L': 10, 'min_time': 0, 'D': {(0, 3): 1}, 'charge_nodes': [], 'battery_nodes': [],
+         'tractor_nodes': [], 'charge_rate': {i: 1 for i in N.nodes}, 'bat_swap_time': 1, 'tr_swap_time': 1,
+         'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 10}}}
+    th = through_times(N, p, 0, 3)
+    assert th[1] == 2 and th[2] == 6 and th[3] == 2
+    assert 2 not in significant_times(N, p, max_detour=0)
+    assert 2 in significant_times(N, p, max_detour=4)
+    assert 2 in significant_times(N, p)          # no limit: every station with a window
