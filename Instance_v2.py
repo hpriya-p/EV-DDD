@@ -123,6 +123,11 @@ class Instance:
         #                           dict {'times': {node: [...]}, 'charges': {node: [...]}}.
         #                           A log from a run with a different T, network type
         #                           (default/heuristic) or set of stations is refused
+        #   mip_gap_schedule (list) – (optional) [[seconds, gap], ...]: before each relaxation,
+        #                           its MIPGap is the gap of the last entry whose seconds the
+        #                           solve's elapsed time (counting earlier attempts of a resumed
+        #                           run) has reached, e.g. [[0, 0.2], [36000, 0.05]]. The
+        #                           lower bound is Gurobi's proven bound, valid at any gap
         #   fast_update   (dict)  – (optional) {'policy': 'simple_update', 'seconds': 18000}: use
         #                           this faster update policy until the solve's elapsed time
         #                           (counting earlier attempts of a resumed run) reaches
@@ -346,6 +351,14 @@ class Instance:
             if l > cap + max(1e-6, 1e-4 * cap):   # slack for the MIP's feasibility tolerance
                 points.setdefault(i, set()).update({s, s + 1} | {t + 1 for t in running[i, s]})
         return points
+
+    def _scheduled_mip_gap(self, elapsed):
+        """MIPGap for a relaxation solved after `elapsed` seconds ('mip_gap_schedule'), or None."""
+        schedule = self.param.get('mip_gap_schedule')
+        if not schedule:
+            return None
+        due = [gap for seconds, gap in sorted(schedule) if elapsed >= seconds]
+        return due[-1] if due else None
 
     def _pool_designs(self, M, limit):
         """Distinct designs (a_c, a_s, n, z) of up to `limit` solutions in M's solution pool."""
@@ -890,6 +903,12 @@ class Instance:
                     else:
                         M = self.model
 
+                    # MIP gap by elapsed solve time (see 'mip_gap_schedule'); the proven bound
+                    # (ObjBound) stays a valid lower bound whatever the gap
+                    gap_now = self._scheduled_mip_gap(time.time() - solve_start)
+                    if gap_now is not None:
+                        M.setParam('MIPGap', gap_now)
+
                     M.optimize()
 
                     if M.status != gp.GRB.OPTIMAL:
@@ -919,6 +938,7 @@ class Instance:
                                    'relaxation_bound': relaxation_bound,
                                    'update_policy': fast['policy'] if fast_active else final_policy,
                                    'objective': M.ObjVal,
+                                   'mip_gap': M.Params.MIPGap,
                                    'num_edges': len(self.Ntl.Ntl.edges),
                                    'num_nodes': len(self.Ntl.Ntl.nodes),
                                    'elapsed': time.time() - solve_start,

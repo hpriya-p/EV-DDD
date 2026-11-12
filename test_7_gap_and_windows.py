@@ -245,3 +245,14 @@ def test_max_detour_keeps_points_near_fastest_route():
     assert 2 not in significant_times(N, p, max_detour=0)
     assert 2 in significant_times(N, p, max_detour=4)
     assert 2 in significant_times(N, p)          # no limit: every station with a window
+
+
+def test_mip_gap_schedule(tmp_path):
+    """The relaxation's MIPGap follows the schedule by elapsed time, and is logged."""
+    log = tmp_path / 'ddd.jsonl'
+    inst = chain_instance(2, 7, 3, mip_gap_schedule=[[0, 0.3], [10**9, 0.01]], ddd_log=str(log))
+    inst.run_DDD(LB=0, LP=False)
+    gaps = [r['mip_gap'] for r in Instance_v2.read_ddd_log(str(log)) if r['event'] == 'iteration']
+    assert gaps and all(g == pytest.approx(0.3) for g in gaps)
+    assert inst._scheduled_mip_gap(0) == 0.3 and inst._scheduled_mip_gap(10**9) == 0.01
+    assert inst._scheduled_mip_gap(-1) is None
