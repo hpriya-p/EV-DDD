@@ -183,3 +183,25 @@ def test_significant_times_keep_the_optimum(T, trucks):
     pts = significant_times(probe.N, probe.param)
     _, val, _ = solve(line_instance(T, T, trucks, initial_discretization={'times': pts}))
     assert val == pytest.approx(opt)
+
+
+def test_earliest_arrival_by_charging_and_by_swapping_separately():
+    """0 -> 1 -> 2 -> 3 with legs of 6 of 10: the truck must recharge at 1 and at 2.
+    Station 1 charges (rate 1, speed 1: 2 levels take 2 steps); station 2 swaps (2 steps)."""
+    from initial_discretization import earliest_arrival, significant_times
+    N = nx.DiGraph()
+    for i in range(3):
+        N.add_edge(i, i + 1, dH=6, dL=3, time=1)
+    p = {'T': 20, 'L': 10, 'min_time': 0, 'D': {(0, 3): 1},
+         'charge_nodes': [1, 2], 'battery_nodes': [2], 'tractor_nodes': [],
+         'charge_rate': {i: 1 for i in N.nodes}, 'bat_swap_time': 2, 'tr_swap_time': 2,
+         'speed_curve': {0: {'speed': 1, 'minbat': 0, 'maxbat': 10}}}
+    by_charging = earliest_arrival(N, p, 0, charge=True, swap=False)
+    by_swapping = earliest_arrival(N, p, 0, charge=False, swap=True)
+    # charging only: 0 -> 1 at 1 with 4, charge 4 -> 6 (2 steps) until 3, -> 2 at 4 with 0,
+    # charge 0 -> 6 (6 steps) until 10, -> 3 at 11
+    assert by_charging[3] == 11
+    # swapping only: no swap at 1, so the truck (4 left at 1) cannot reach 2
+    assert 3 not in by_swapping and 2 not in by_swapping
+    pts = significant_times(N, p)
+    assert 11 in pts[3] and 4 in pts[2]
