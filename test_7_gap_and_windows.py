@@ -273,3 +273,15 @@ def test_converged_at_loose_gap_is_resolved_at_final_gap(tmp_path):
     assert val == pytest.approx(opt)
     last = [r for r in recs if r['event'] == 'iteration'][-1]
     assert last['mip_gap'] == pytest.approx(0.0)
+
+
+def test_construct_model_frees_the_previous_model():
+    """A rebuild disposes of the old Gurobi model, so two full models are never held at once."""
+    inst = chain_instance(2, 7, 3)
+    old = inst.model
+    inst.construct_model()
+    with pytest.raises(Exception):
+        old.NumVars                     # disposed: no longer usable
+    assert inst.model.NumVars > 0
+    _, val, props = inst.run_DDD(LB=0, LP=False)
+    assert not props.get('timeout')

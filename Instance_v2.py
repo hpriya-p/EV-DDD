@@ -408,6 +408,10 @@ class Instance:
                                               fixed_design=design, design_mode=cfg.get('design', 'at_least'))
             except gp.GurobiError as err:          # e.g. out of memory: keep going without a bound
                 res = {'status': f'gurobi error: {err}', 'upper_bound': None}
+            finally:
+                # free the pessimistic network and model now; the solution is already read
+                probe._release_model()
+                probe.Ntl = None
             tried.append({'status': res['status'], 'upper_bound': res['upper_bound'],
                           'seconds': time.time() - t0})
             if res['upper_bound'] is not None and (best is None or res['upper_bound'] < best['upper_bound']):
@@ -480,7 +484,22 @@ class Instance:
         #     for i in self.param['sinks']:
         #         self.model.addConstr(gp.quicksum(self.x_load[e] for e in self.Ntl.Ntl.edges if e[1][0] == i and e[1][2] == self.param['T'] - 1) == self.D[i], name=f"demand_{i}_dest")
 
+    def _release_model(self):
+        """Free the current Gurobi model's memory before a new one is built. The solve loop
+        may still hold a reference to it, which would otherwise keep both models in memory
+        during a rebuild (this ran a 77 GB job out of memory). The license session belongs
+        to the environment, not the model, so it is kept."""
+        old = getattr(self, 'model', None)
+        if old is not None:
+            try:
+                old.dispose()
+            except (gp.GurobiError, AttributeError):
+                pass
+        self.model = None
+        self.x_load, self.x_ener, self._cons = {}, {}, {}
+
     def construct_model(self, penalty=False):
+        self._release_model()
         self.model = gp.Model()
         self.model.setParam('MIPGap', 0.05)
         # Constraint handles by key (node, edge, commodity, ...). update_model removes
