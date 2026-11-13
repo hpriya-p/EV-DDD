@@ -380,19 +380,32 @@ class Instance:
 
     @staticmethod
     def _optimize_capped(M, cap):
-        """Optimize M, stopping after `cap` seconds if it has a solution by then (else at
-        its first one). Returns True if the solve was stopped this way (a solution exists
-        but its gap may exceed MIPGap), False if it ended normally. No cap: plain optimize."""
+        """Optimize M, stopping after `cap` seconds once it has both a solution and a finite
+        bound (ObjBound). Until it has both, the search continues from where it stopped: with
+        no solution, until its first one; with a solution but no bound yet (the root
+        relaxation unfinished), a minute at a time. Returns True if the solve was stopped this
+        way (its gap may exceed MIPGap), False if it ended normally. No cap: plain optimize."""
         M.setParam('TimeLimit', cap if cap else gp.GRB.INFINITY)
         M.optimize()
         if not cap or M.status != gp.GRB.TIME_LIMIT:
             return False
-        if M.SolCount == 0:
-            # keep going, from where it stopped, until the first solution
-            M.setParam('TimeLimit', gp.GRB.INFINITY)
-            M.setParam('SolutionLimit', 1)
+
+        def has_bound():
+            try:
+                return abs(M.ObjBound) < gp.GRB.INFINITY
+            except gp.GurobiError:
+                return False
+
+        while M.status in (gp.GRB.TIME_LIMIT, gp.GRB.SOLUTION_LIMIT) \
+                and not (M.SolCount > 0 and has_bound()):
+            if M.SolCount == 0:
+                M.setParam('TimeLimit', gp.GRB.INFINITY)
+                M.setParam('SolutionLimit', 1)
+            else:
+                M.setParam('TimeLimit', 60)
+                M.setParam('SolutionLimit', gp.GRB.MAXINT)
             M.optimize()
-            M.setParam('SolutionLimit', gp.GRB.MAXINT)
+        M.setParam('SolutionLimit', gp.GRB.MAXINT)
         return M.status in (gp.GRB.TIME_LIMIT, gp.GRB.SOLUTION_LIMIT) and M.SolCount > 0
 
     def _pool_designs(self, M, limit):
