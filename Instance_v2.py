@@ -384,33 +384,25 @@ class Instance:
 
     @staticmethod
     def _optimize_capped(M, cap):
-        """Optimize M, stopping after `cap` seconds once it has both a solution and a finite
-        bound (ObjBound). Until it has both, the search continues from where it stopped: with
-        no solution, until its first one; with a solution but no bound yet (the root
-        relaxation unfinished), a minute at a time. Returns True if the solve was stopped this
-        way (its gap may exceed MIPGap), False if it ended normally. No cap: plain optimize."""
-        M.setParam('TimeLimit', cap if cap else gp.GRB.INFINITY)
-        M.optimize()
-        if not cap or M.status != gp.GRB.TIME_LIMIT:
+        """Optimize M once; after `cap` seconds, stop as soon as it has both a solution and a
+        finite bound (ObjBound). The stop is a callback, not a TimeLimit: an optimize()
+        interrupted inside the root relaxation does not keep its LP progress, so stopping and
+        resuming it in slices can restart the root LP forever on a large model. Returns True
+        if the solve was stopped this way (its gap may exceed MIPGap), False if it ended
+        normally. No cap: plain optimize."""
+        M.setParam('TimeLimit', gp.GRB.INFINITY)
+        if not cap:
+            M.optimize()
             return False
 
-        def has_bound():
-            try:
-                return abs(M.ObjBound) < gp.GRB.INFINITY
-            except gp.GurobiError:
-                return False
+        def stop_after_cap(model, where):
+            if where == gp.GRB.Callback.MIP and model.cbGet(gp.GRB.Callback.RUNTIME) >= cap:
+                if model.cbGet(gp.GRB.Callback.MIP_SOLCNT) > 0 \
+                        and abs(model.cbGet(gp.GRB.Callback.MIP_OBJBND)) < gp.GRB.INFINITY:
+                    model.terminate()
 
-        while M.status in (gp.GRB.TIME_LIMIT, gp.GRB.SOLUTION_LIMIT) \
-                and not (M.SolCount > 0 and has_bound()):
-            if M.SolCount == 0:
-                M.setParam('TimeLimit', gp.GRB.INFINITY)
-                M.setParam('SolutionLimit', 1)
-            else:
-                M.setParam('TimeLimit', 60)
-                M.setParam('SolutionLimit', gp.GRB.MAXINT)
-            M.optimize()
-        M.setParam('SolutionLimit', gp.GRB.MAXINT)
-        return M.status in (gp.GRB.TIME_LIMIT, gp.GRB.SOLUTION_LIMIT) and M.SolCount > 0
+        M.optimize(stop_after_cap)
+        return M.status == gp.GRB.INTERRUPTED and M.SolCount > 0
 
     def _pool_designs(self, M, limit):
         """Distinct designs (a_c, a_s, n, z) of up to `limit` solutions in M's solution pool."""
