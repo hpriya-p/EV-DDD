@@ -300,7 +300,18 @@ def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4,
                     x.lb = max(x.lb, min(v, x.ub))
         inst.model.update()
     m = inst.model
-    m.setParam('OutputFlag', 1 if output else 0)
+    log = getattr(inst, '_gurobi_log', None)
+    if log:
+        # the instance logs every model to a file (solve_worker's gurobi_log): log this one too,
+        # under a header that marks it as an upper-bound solve
+        with open(log, 'a') as f:
+            f.write(f"\n===== upper bound: pessimistic network, {inst.Ntl.Ntl.number_of_edges():,} edges, "
+                    f"design {design_mode if fixed_design is not None else 'free'} =====\n")
+        m.setParam('OutputFlag', 1)
+        m.setParam('LogToConsole', 1 if output else 0)
+        m.setParam('LogFile', log)
+    else:
+        m.setParam('OutputFlag', 1 if output else 0)
     m.setParam('MIPGap', mip_gap)
     if threads:
         m.setParam('Threads', threads)
