@@ -344,3 +344,175 @@ def upper_bound_from_log(N, parameters, config, ddd_log, iteration=None, **kwarg
     res.update(iteration=disc['iteration'], lower_bound=lb,
                gap=(ub - lb) / ub if (ub and lb is not None) else None)
     return res
+
+
+# ---------------------------------------------------------------------------
+# Extra points for the pessimistic network: true routes
+# ---------------------------------------------------------------------------
+# Any discretization gives a valid pessimistic network, so the upper-bound network may
+# have more points than the relaxation's. On a coarse grid it can have no route at all
+# (every arrival is rounded up to the next retained time, every charge down). These add
+# the true (time, charge) points of whole routes, so that the network contains them
+# exactly: first the relaxation's own vehicle routes replayed with true values, and, for
+# a commodity none of whose routes fits in the horizon, its earliest-arrival route.
+# Charging follows the pessimistic network's rule: one speed segment per charging edge,
+# lasting ceil(levels / (rate * speed)) steps.
+
+_TRANSIT = ('transit_H', 'transit_L')
+
+
+def _num(x):
+    return int(round(x)) if abs(x - round(x)) < 1e-9 else x
+
+
+def _charge_pieces(param, i, g, target):
+    """Charge at station i from g to target, one speed segment at a time:
+    [(level, steps), ...], or None if i cannot charge."""
+    curve, rate = param['speed_curve'], param['charge_rate'].get(i, 0)
+    if rate <= 0:
+        return None
+    pieces = []
+    while g < target:
+        q = _get_q(curve, g)
+        top = min(target, curve[q]['maxbat'], param['L'])
+        if top <= g:
+            return None
+        pieces.append((top, int(np.ceil((top - g) / (rate * curve[q]['speed'])))))
+        g = top
+    return pieces
+
+
+def replay_routes(inst, x_eners):
+    """The relaxation's vehicle routes ({k: {edge: flow}} on inst.Ntl) followed with true
+    travel times, energy use and charging: [(k, ok, [(station, charge, time), ...])].
+    A route waits for its planned departure when it arrives early, and ends at its first
+    arrival at its final station (it can wait there until T - 1; the relaxation, which
+    rounds charge up, may add empty round trips after it that a real battery cannot
+    make). ok is False when it runs out of battery, cannot charge as planned, or runs
+    past T - 1. Charger capacity is not checked here: the MIP on the pessimistic network
+    enforces it."""
+    ctn, param, T = inst.Ntl, inst.param, inst.param['T']
+    routes = []
+    for k, flow in x_eners.items():
+        flow = {e: x for e, x in flow.items() if x > 0.5}
+        if not flow:
+            continue
+        for P in ctn.flow_decomposition(flow):
+            i0, g, t = P[0][0][0], P[0][0][1], P[0][0][2]
+            last = P[-1][1][0]
+            states, ok = [(i0, g, t)], True
+            for e in P:
+                v1, v2, _ = e
+                kind = ctn.edge_types[e]
+                if v1[2] > t:                                   # wait for the planned departure
+                    t = v1[2]
+                    states.append((v1[0], g, t))
+                if kind in _TRANSIT:
+                    g, t = g - (ctn.edge_dists[e] - ctn.edge_charges[e]), t + ctn.edge_times[e]
+                    ok = g >= 0
+                    states.append((v2[0], g, t))
+                elif kind == 'charge':
+                    # charge to the level the relaxation plans after this edge (its head); the
+                    # relaxation rounds charge up, so its later legs assume that level
+                    target = max(v2[1], v1[1] - ctn.edge_dists[e] + ctn.edge_charges[e])
+                    pieces = _charge_pieces(param, v1[0], g, target) if g < target else []
+                    if pieces is None:
+                        ok = False
+                    for g, dt in pieces or []:
+                        t += dt
+                        states.append((v1[0], g, t))
+                elif kind == 'swap':
+                    g, t = v2[1], t + ctn.edge_times[e]
+                    states.append((v2[0], g, t))
+                if not ok or t > T - 1:
+                    ok = False
+                    break
+                if kind in _TRANSIT and v2[0] == last:
+                    break                                       # arrived: wait here until T - 1
+            routes.append((k, ok, states))
+    return routes
+
+
+def earliest_route(inst, k):
+    """Earliest-arrival route of commodity k's loaded truck (leaving its origin full at
+    min_time; transit with consumption dH; charging as in the pessimistic network; swaps
+    to a full battery where the mode allows them): [(station, charge, time), ...] up to
+    its arrival at the destination, or None if it cannot arrive by T - 1."""
+    import heapq
+    param, N = inst.param, inst.N
+    o, z = list(param['D'])[k]
+    T, L, t0 = param['T'], param['L'], param.get('min_time', 0)
+    curve = param['speed_curve']
+    charge_nodes = set(param['charge_nodes'])
+    swap_time = {i: param['bat_swap_time'] for i in param.get('battery_nodes', [])}
+    swap_time.update({i: param['tr_swap_time'] for i in param.get('tractor_nodes', [])})
+    succ = N.successors if N.is_directed() else N.neighbors
+    best, prev = {(o, L): t0}, {}
+    heap = [(t0, o, L)]
+
+    def push(j, g2, t2, frm):
+        if t2 <= T - 1 and t2 < best.get((j, g2), np.inf):
+            best[(j, g2)], prev[(j, g2)] = t2, frm
+            heapq.heappush(heap, (t2, j, g2))
+
+    while heap:
+        t, i, g = heapq.heappop(heap)
+        if best.get((i, g), np.inf) < t:
+            continue
+        if i == z:
+            states, s = [], (i, g)
+            while s is not None:
+                states.append((s[0], s[1], best[s]))
+                s = prev.get(s)
+            return states[::-1]
+        for j in succ(i):
+            dH = N[i][j]['dH']
+            if dH <= g:
+                push(j, _num(g - dH), t + int(N[i][j]['time']), (i, g))
+        if i in charge_nodes and param['charge_rate'].get(i, 0) > 0:
+            q = _get_q(curve, g)
+            top = min(curve[q]['maxbat'], L)
+            rate = param['charge_rate'][i] * curve[q]['speed']
+            for g2 in range(int(np.floor(g)) + 1, int(top) + 1):
+                push(i, g2, t + int(np.ceil((g2 - g) / rate)), (i, g))
+        if i in swap_time and g < L:
+            push(i, L, t + int(swap_time[i]), (i, g))
+    return None
+
+
+def route_points(inst, x_eners):
+    """Points to add to the pessimistic network: the replayed routes that fit, plus the
+    earliest-arrival route of every commodity with a route that does not.
+    Returns ({station: {times}}, {station: {charges}}, summary)."""
+    T, t_min, L = inst.param['T'], inst.param.get('min_time', 0), inst.param['L']
+    times, charges = {}, {}
+
+    def add(states):
+        for i, g, t in states:
+            g, t = _num(g), int(t)
+            if t_min <= t <= T - 1:
+                times.setdefault(i, set()).add(t)
+            if isinstance(g, int) and 0 <= g <= L:
+                charges.setdefault(i, set()).add(g)
+
+    routes = replay_routes(inst, x_eners) if x_eners else []
+    failed = set()
+    for k, ok, states in routes:
+        if ok:
+            add(states)
+        else:
+            failed.add(k)
+    covered = {k for k, ok, _ in routes if ok}
+    fallback, unreachable = [], []
+    for k in range(len(inst.param['D'])):
+        if k in failed or k not in covered:
+            route = earliest_route(inst, k)
+            if route is None:
+                unreachable.append(k)
+            else:
+                add(route)
+                fallback.append(k)
+    summary = {'routes': len(routes), 'replayed_ok': sum(ok for _, ok, _ in routes),
+               'fallback': fallback, 'unreachable': unreachable,
+               'points': sum(len(v) for v in times.values()) + sum(len(v) for v in charges.values())}
+    return times, charges, summary

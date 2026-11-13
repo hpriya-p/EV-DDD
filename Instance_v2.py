@@ -164,7 +164,11 @@ class Instance:
         #                           (upper_bound.py), with the design as a minimum ('at_least')
         #                           or fixed ('exact'); any solution found is feasible for the
         #                           full problem. solve() stops when (UB - LB) / UB <= 'gap'
-        #                           and returns the best such solution
+        #                           and returns the best such solution. With 'route_points'
+        #                           (default True) the pessimistic network also gets the true
+        #                           points of the relaxation's vehicle routes, and of an
+        #                           earliest-arrival route for each commodity whose route
+        #                           does not fit (upper_bound.route_points)
         #   ddd_log       (str)   – (optional) path of a JSON Lines file to which solve() writes
         #                           one record per DDD iteration and a final record with the
         #                           solution; read it back with read_ddd_log
@@ -420,14 +424,26 @@ class Instance:
         M.Params.SolutionNumber = 0
         return designs
 
-    def _upper_bound_step(self, M, cfg):
+    def _upper_bound_step(self, M, cfg, x_eners=None):
         """
         Try the pool's designs on the pessimistic network of the current discretization
         (see the 'upper_bound' parameter). Returns the best result of upper_bound_on_instance
-        that has a solution, or None. The model is built on a copy of this instance, so a
-        subclass's construct_model (e.g. a base design) applies to it too.
+        that has a solution (or None), the attempts, and a summary of the route points.
+        The model is built on a copy of this instance, so a subclass's construct_model
+        (e.g. a base design) applies to it too.
+
+        Unless cfg['route_points'] is False, the pessimistic network also gets the true
+        points of the relaxation's vehicle routes (x_eners) replayed with true values, and
+        of the earliest-arrival route of each commodity whose replayed route does not fit
+        (upper_bound.route_points). Any discretization gives a valid upper bound, and on a
+        coarse grid the pessimistic network may otherwise contain no route at all.
         """
-        from upper_bound import upper_bound_on_instance
+        from upper_bound import upper_bound_on_instance, route_points
+        times, charges, points = self.Ntl.times, self.Ntl.charges, None
+        if cfg.get('route_points', True):
+            add_t, add_g, points = route_points(self, x_eners or {})
+            times = {i: sorted(set(v) | add_t.get(i, set())) for i, v in self.Ntl.times.items()}
+            charges = {i: sorted(set(v) | add_g.get(i, set())) for i, v in self.Ntl.charges.items()}
         best, tried = None, []
         skip = {'model', 'x_load', 'x_ener', '_cons', '_sessions', 'n', 'a_c', 'a_s', 'z', 'a'}
         for design in self._pool_designs(M, cfg.get('pool', 3)):
@@ -436,7 +452,7 @@ class Instance:
             probe.param = {k: v for k, v in self.param.items() if k not in ('upper_bound', 'ddd_log')}
             t0 = time.time()
             try:
-                res = upper_bound_on_instance(probe, self.Ntl.times, self.Ntl.charges,
+                res = upper_bound_on_instance(probe, times, charges,
                                               time_limit=cfg.get('time_limit', 600),
                                               mip_gap=cfg.get('mip_gap', 1e-4),
                                               threads=getattr(self, '_threads', 0),
@@ -451,7 +467,7 @@ class Instance:
                           'seconds': time.time() - t0})
             if res['upper_bound'] is not None and (best is None or res['upper_bound'] < best['upper_bound']):
                 best = res
-        return best, tried
+        return best, tried, points
 
     def _discretization_size(self):
         """Changes whenever an update adds a time, a charge level or an edge."""
@@ -1046,12 +1062,13 @@ class Instance:
                     # pessimistic network, whose solutions are feasible for the full problem.
                     if ub_cfg and not LP_relax and n_iter % ub_cfg.get('every', 5) == 0:
                         t_ub = time.time()
-                        res, tried = self._upper_bound_step(M, ub_cfg)
+                        res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners)
                         if res is not None and (best_ub is None or res['upper_bound'] < best_ub['upper_bound']):
                             best_ub = dict(res, iteration=n_iter)
                         ub = best_ub['upper_bound'] if best_ub else None
                         gap = (ub - last_valid_bound) / ub if (ub and last_valid_bound is not None) else None
                         self._log_ddd({'event': 'upper_bound', 'iteration': n_iter, 'tried': tried,
+                                       'route_points': points,
                                        'upper_bound': ub, 'lower_bound': last_valid_bound, 'gap': gap,
                                        'seconds': time.time() - t_ub, 'elapsed': time.time() - solve_start})
                         if gap is not None and gap <= ub_cfg.get('gap', 0.01):
