@@ -133,6 +133,11 @@ class Instance:
         #                           network is solved again at that gap, which is kept from then on
         #   final_mip_gap (float) – (optional) the gap a converged solution must be certified at
         #                           (default: the tightest gap of mip_gap_schedule)
+        #   iteration_time_limit (float) – (optional) seconds: a relaxation that has a solution
+        #                           after this long is stopped there and its best solution used,
+        #                           like a solution at a loose gap (the bound ObjBound stays valid);
+        #                           without one it runs on until it finds its first. Not applied
+        #                           to the re-solve that certifies a converged solution
         #   fast_update   (dict)  – (optional) {'policy': 'simple_update', 'seconds': 18000}: use
         #                           this faster update policy until the solve's elapsed time
         #                           (counting earlier attempts of a resumed run) reaches
@@ -372,6 +377,23 @@ class Instance:
             return None
         due = [gap for seconds, gap in sorted(schedule) if elapsed >= seconds]
         return due[-1] if due else None
+
+    @staticmethod
+    def _optimize_capped(M, cap):
+        """Optimize M, stopping after `cap` seconds if it has a solution by then (else at
+        its first one). Returns True if the solve was stopped this way (a solution exists
+        but its gap may exceed MIPGap), False if it ended normally. No cap: plain optimize."""
+        M.setParam('TimeLimit', cap if cap else gp.GRB.INFINITY)
+        M.optimize()
+        if not cap or M.status != gp.GRB.TIME_LIMIT:
+            return False
+        if M.SolCount == 0:
+            # keep going, from where it stopped, until the first solution
+            M.setParam('TimeLimit', gp.GRB.INFINITY)
+            M.setParam('SolutionLimit', 1)
+            M.optimize()
+            M.setParam('SolutionLimit', gp.GRB.MAXINT)
+        return M.status in (gp.GRB.TIME_LIMIT, gp.GRB.SOLUTION_LIMIT) and M.SolCount > 0
 
     def _pool_designs(self, M, limit):
         """Distinct designs (a_c, a_s, n, z) of up to `limit` solutions in M's solution pool."""
@@ -907,6 +929,7 @@ class Instance:
         # of 'mip_gap_schedule'); once a solution converges at a looser gap, the gap is held here
         final_gap = self._final_mip_gap()
         tightened = False
+        certifying = False      # the next solve re-solves a converged network: no time cap
         # optional fast first phase (see 'fast_update'): the configured policy is restored,
         # with a full rebuild, once the elapsed time reaches fast['seconds']
         fast = self.param.get('fast_update')
@@ -945,11 +968,16 @@ class Instance:
                     if gap_now is not None:
                         M.setParam('MIPGap', gap_now)
 
-                    M.optimize()
+                    # optional time cap per relaxation (see 'iteration_time_limit')
+                    cap = None if (LP_relax or certifying) else self.param.get('iteration_time_limit')
+                    capped = self._optimize_capped(M, cap)
+                    certifying = False
 
-                    if M.status != gp.GRB.OPTIMAL:
+                    if M.status != gp.GRB.OPTIMAL and not capped:
                         self.resolve_infeasibility(LP_relax, verbose)
                         continue
+                    # gap the solution is actually certified at (at most MIPGap unless capped)
+                    achieved_gap = 0.0 if LP_relax else M.MIPGap
                     
                     if self.verbose:
                         print(f"Iteration {n_iter}: obj {M.ObjVal}, network {len(self.Ntl.Ntl.nodes)} nodes, {len(self.Ntl.Ntl.edges)} edges")
@@ -975,6 +1003,8 @@ class Instance:
                                    'update_policy': fast['policy'] if fast_active else final_policy,
                                    'objective': M.ObjVal,
                                    'mip_gap': M.Params.MIPGap,
+                                   'achieved_gap': achieved_gap,
+                                   'time_capped': capped,
                                    'num_edges': len(self.Ntl.Ntl.edges),
                                    'num_nodes': len(self.Ntl.Ntl.nodes),
                                    'elapsed': time.time() - solve_start,
@@ -1050,17 +1080,23 @@ class Instance:
                         iter_times.append(time.time() - iter_start)
                         continue
 
-                    if not artificial and network_is_ddd and final_gap is not None \
-                            and M.Params.MIPGap > final_gap + 1e-12:
+                    # gap a converged solution must be certified at: the final gap, or else
+                    # the configured MIPGap (which a time-capped solve may not have reached)
+                    required_gap = final_gap if final_gap is not None else M.Params.MIPGap
+                    if not artificial and network_is_ddd and not LP_relax \
+                            and achieved_gap > required_gap + 1e-12:
                         # The solution is feasible, but the relaxation was solved only to a loose
-                        # gap, so it is certified only to that gap: solve the same network again
-                        # at the final gap, and keep that gap from now on.
+                        # gap (or stopped by the time cap), so it is certified only to that gap:
+                        # solve the same network again at the required gap, without a time cap,
+                        # and keep that gap from now on.
                         self._log_ddd({'event': 'tighten_mip_gap', 'iteration': n_iter,
-                                       'from': M.Params.MIPGap, 'to': final_gap,
+                                       'from': achieved_gap, 'to': required_gap, 'time_capped': capped,
                                        'objective': M.ObjVal, 'elapsed': time.time() - solve_start})
                         if self.verbose:
-                            print(f"Converged at MIP gap {M.Params.MIPGap:g}; re-solving at {final_gap:g}")
-                        tightened = True
+                            print(f"Converged at MIP gap {achieved_gap:g}; re-solving at {required_gap:g}")
+                        if final_gap is not None:
+                            tightened = True
+                        certifying = True
                         n_iter += 1
                         iter_times.append(time.time() - iter_start)
                         continue
