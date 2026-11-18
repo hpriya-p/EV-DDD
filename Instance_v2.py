@@ -160,6 +160,14 @@ class Instance:
         #                           reach it, or too late to reach its destination by T-1
         #                           (fastest travel times; see _in_time_window). Never cuts
         #                           off the image of a feasible solution (waiting is free)
+        #   vehicle_time_windows (bool) – (optional, default False) charger mode only (no
+        #                           tractor_nodes or battery_nodes). The vehicle of commodity k
+        #                           starts at o_k and ends at z_k (each truck pulls its own
+        #                           trailer), and x_ener[e, k] = 0 on edges outside k's time
+        #                           window, by the same test as the loads (_in_time_window).
+        #                           Without it, vehicles are pooled across commodities at the
+        #                           start and end nodes, so the label k of a vehicle is not tied
+        #                           to k's trip and the window would not be valid
         #   upper_bound   (dict)  – (optional) upper bounds during Bi-DDD and stopping at a gap:
         #                           {'every': 5, 'gap': 0.01, 'pool': 3, 'time_limit': 600,
         #                           'mip_gap': 1e-4, 'design': 'at_least'} (defaults shown).
@@ -596,6 +604,11 @@ class Instance:
             self.K = len(self.param['D'])
         # origin of each commodity, in the order of param['D'] (as in __constr_demand)
         self._origins = [nodes[0] for nodes in self.param['D'].keys()] if 'D' in self.param else []
+        self._dests = [nodes[1] for nodes in self.param['D'].keys()] if 'D' in self.param else []
+        if self.param.get('vehicle_time_windows'):
+            assert not self.param.get('tractor_nodes') and not self.param.get('battery_nodes'), \
+                "vehicle_time_windows needs charger mode: relay tractors and battery swaps " \
+                "hand a load to another vehicle, which may wait outside the load's window"
         self._compute_time_windows()
         # for i in self.param['sources']:
         #     self.D[i] = self.model.addVar(lb=0, name=f"D[{i}]")
@@ -606,7 +619,7 @@ class Instance:
         for e in self.Ntl.Ntl.edges:
             for k in range(self.K):
                 self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e, k))
-                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._start_ub(e), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
+                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._vehicle_ub(e, k), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
         
            
         self.n = dict()
@@ -747,6 +760,24 @@ class Instance:
             return 0
         return gp.GRB.INFINITY
 
+    def _vehicle_ub(self, e, k):
+        """Upper bound of x_ener[e, k]: _start_ub, and with param['vehicle_time_windows']
+        0 on edges vehicle k cannot use: leaving a start node other than o_k, entering an end
+        node other than z_k, or outside k's time window (_in_time_window). Each of these holds
+        for the image of every feasible solution in which truck k carries load k from o_k to
+        z_k, so the network stays a relaxation of that problem."""
+        if self._start_ub(e) == 0:
+            return 0
+        if self.param.get('vehicle_time_windows'):
+            (i, _, t, _), (j, _, t2, _) = e[0], e[1]
+            if not isinstance(i, str) and t == self.param['min_time'] and i != self._origins[k]:
+                return 0
+            if not isinstance(j, str) and t2 == self.param['T'] - 1 and j != self._dests[k]:
+                return 0
+            if not self._in_time_window(e, k):
+                return 0
+        return gp.GRB.INFINITY
+
     def _load_ub(self, e, k):
         """
         Upper bound of x_load[e, k]: 0 if e leaves commodity k's origin after
@@ -826,7 +857,7 @@ class Instance:
             for k in range(self.K):
                 self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_load', e, k))
-                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._start_ub(e), vtype=gp.GRB.INTEGER,
+                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._vehicle_ub(e, k), vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_ener', e, k))
  
 
@@ -843,11 +874,12 @@ class Instance:
 
         # Load time windows round the earliest departure down to a retained time, so a
         # new time at a station can tighten the bounds of its existing edges.
-        if self.param.get('load_time_windows', True):
+        if self.param.get('load_time_windows', True) or self.param.get('vehicle_time_windows'):
             for e in current_edges - new_edges:
                 if e[0][0] in affected_i:
                     for k in range(self.K):
                         self.x_load[e, k].ub = self._load_ub(e, k)
+                        self.x_ener[e, k].ub = self._vehicle_ub(e, k)
 
         # 5. Update flow balance constraints for affected network nodes
         for v in affected_vnodes:
