@@ -99,7 +99,12 @@ class Instance:
         #   charge_cost   (dict)  – {(node, time): cost}; per-unit charge cost at node i at time t
         #   stat_cost     (dict)  – {node: cost}; cost per charger a_c[i] installed at node i
         #   site_install_cost (float) – (optional, default 0) cost of installing a swap site,
-        #                           a_s[i] = 1, at a battery or tractor node i
+        #                           a_s[i] = 1, at a battery or tractor node i. Swaps at i are
+        #                           possible only where a_s[i] = 1 (constraint swap_site)
+        #   site_choice_nodes (list) – (optional) nodes that are both charge nodes and swap
+        #                           nodes but may host only one of the two: a binary y_c[i]
+        #                           (charging site open, at no cost), a_c[i] <= N_chargers * y_c[i]
+        #                           and y_c[i] + a_s[i] <= 1
         #   existing_chargers (dict) – (optional) {node: number of chargers already installed};
         #                           they cost nothing, a_c[i] counts the new chargers only (each
         #                           costing stat_cost[i]), and all have the station's power:
@@ -498,6 +503,20 @@ class Instance:
 
     
 
+    def __constr_swapsite(self, i, t):
+        """Swaps at swap node i only at an installed swap site: the loads on swap edges
+        leaving i at retained time t are at most the total demand times a_s[i] (no more
+        loads than the total demand can be at i at one time)."""
+        if not (i in self.param['tractor_nodes'] or i in self.param['battery_nodes']):
+            return
+        terms = [self.x_load[e, k] for g in self.Ntl.charges[i]
+                 for e in self.multi_out_edges((i, g, t, self.Ntl.get_q(i, g)))
+                 if self.Ntl.edge_types[e] == 'swap' for k in range(self.K)]
+        if terms:
+            M_site = sum(self.param['D'].values()) if 'D' in self.param else 0
+            self._cons[('swap_site', i, t)] = self.model.addConstr(
+                gp.quicksum(terms) <= M_site * self.a_s[i], name='swap_site[' + str(i) + ',' + str(t) + ']')
+
     def __constr_edge(self, e):
         if self.Ntl.edge_types[e] == 'transit_L': # or self.Ntl.edge_types[e] == 'charge':
             for k in range(self.K):
@@ -602,6 +621,18 @@ class Instance:
             if i in self.param['tractor_nodes'] or i in self.param['battery_nodes']:
                 self._cons[('site_cap', i)] = self.model.addConstr(self.n[i] <= M_site * self.a_s[i],
                                                                    name='site_cap[' + str(i) + ']')
+
+        # a charging site or a swap site, not both, at the site_choice_nodes
+        self.y_c = {}
+        M_chargers = self.param.get('N_chargers') or M_site
+        for i in self.param.get('site_choice_nodes', []):
+            if i not in self.N.nodes:
+                continue
+            self.y_c[i] = self.model.addVar(vtype=gp.GRB.BINARY, name='y_c[' + str(i) + ']')
+            self._cons[('charge_site', i)] = self.model.addConstr(self.a_c[i] <= M_chargers * self.y_c[i],
+                                                                  name='charge_site[' + str(i) + ']')
+            self._cons[('one_site', i)] = self.model.addConstr(self.y_c[i] + self.a_s[i] <= 1,
+                                                               name='one_site[' + str(i) + ']')
         
         for v in self.Ntl.Ntl.nodes:
             self.__constr_flow_bal_ener(v)
@@ -611,6 +642,7 @@ class Instance:
             self.__constr_end_cond_x(i)
             for t in self.Ntl.times[i]:
                 self.__constr_chargecap(i, t)
+                self.__constr_swapsite(i, t)
  
         #self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['tractor_nodes']) <= self.param['N_tractors'], name='tractor_limit')
         #self.model.addConstr(gp.quicksum(self.n[i] for i in self.param['battery_nodes']) <= self.param['N_batteries'], name='battery_limit')
@@ -819,10 +851,12 @@ class Instance:
                 affected_it.add((i, t))
         for i, t in affected_it:
             self._remove_constr(('charge_cap', i, t))
+            self._remove_constr(('swap_site', i, t))
         self.model.update()
         for i, t in affected_it:
             if i in self.N.nodes:
                 self.__constr_chargecap(i, t)
+                self.__constr_swapsite(i, t)
 
         # 8. Update demand constraints (they sum over all edges at the sources and sinks)
         for k in range(self.K):
