@@ -425,7 +425,7 @@ class Instance:
         M.Params.SolutionNumber = 0
         return designs
 
-    def _upper_bound_step(self, M, cfg, x_eners=None, a_c=None, a_s=None):
+    def _upper_bound_step(self, M, cfg, x_eners=None, a_c=None, a_s=None, x_loads=None):
         """
         Try the pool's designs on the pessimistic network of the current discretization
         (see the 'upper_bound' parameter). Returns the best result of upper_bound_on_instance
@@ -444,7 +444,7 @@ class Instance:
         T = self.param['T']
         T_ub = T
         if cfg.get('route_points', True):
-            add_t, add_g, points = route_points(self, x_eners or {}, a_c, a_s)
+            add_t, add_g, points = route_points(self, x_eners or {}, a_c, a_s, x_loads)
             # routes may run past T - 1 (the horizon is soft for the upper bound): the
             # upper-bound network then has the horizon that holds them all
             T_ub = max(T, points['horizon'])
@@ -1117,7 +1117,7 @@ class Instance:
                     # pessimistic network, whose solutions are feasible for the full problem.
                     if ub_cfg and not LP_relax and n_iter % ub_cfg.get('every', 5) == 0:
                         t_ub = time.time()
-                        res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners, a_, as_)
+                        res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners, a_, as_, x_loads)
                         if res is not None and (best_ub is None or res['upper_bound'] < best_ub['upper_bound']):
                             best_ub = dict(res, iteration=n_iter)
                         ub = best_ub['upper_bound'] if best_ub else None

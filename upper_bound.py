@@ -546,8 +546,13 @@ def earliest_route(inst, k, horizon=None):
     return None
 
 
-def route_points(inst, x_eners, a_c=None, a_s=None):
-    """Points to add to the pessimistic network: the replayed routes that can be driven
+def route_points(inst, x_eners, a_c=None, a_s=None, x_loads=None):
+    """Points to add to the pessimistic network: the replayed routes that can be driven.
+    With x_loads ({k: {edge: flow}}, the relaxation's load flows), the routes replayed are the
+    load paths (a vehicle while it carries the load), not the vehicles' whole routes: these
+    include empty repositioning and loops that the relaxation makes nearly free in time, and
+    replayed with true times they run far past the horizon. Empty movements remain possible
+    on the network's other points
     (battery never below 0), plus the earliest-arrival route of every commodity (always:
     a few points, and more points never make the upper bound worse).
     Routes may end after T - 1; summary['horizon'] is the horizon (at least T) that
@@ -566,7 +571,8 @@ def route_points(inst, x_eners, a_c=None, a_s=None):
             if isinstance(g, int) and 0 <= g <= L:
                 charges.setdefault(i, set()).add(g)
 
-    routes = replay_routes(inst, x_eners, a_s=a_s) if x_eners else []
+    flows = x_loads if x_loads else x_eners
+    routes = replay_routes(inst, flows, a_s=a_s) if flows else []
     failed = set()
     for k, ok, states, _, _ in routes:
         if ok:
@@ -585,6 +591,7 @@ def route_points(inst, x_eners, a_c=None, a_s=None):
                 add(route)
                 fallback.append(k)
     summary = {'routes': len(routes), 'replayed_ok': int(sum(r[1] for r in routes)),
+               'replayed': 'load paths' if x_loads else 'vehicle routes',
                # charger capacity of the repaired routes, with the relaxation's chargers
                # (the upper-bound MIP enforces capacity; this shows where it must deviate)
                'over_capacity': {int(i): len(v) for i, v in over.items()},
