@@ -437,16 +437,31 @@ class Instance:
         """
         from upper_bound import upper_bound_on_instance, route_points
         times, charges, points = self.Ntl.times, self.Ntl.charges, None
+        T = self.param['T']
+        T_ub = T
         if cfg.get('route_points', True):
             add_t, add_g, points = route_points(self, x_eners or {})
-            times = {i: sorted(set(v) | add_t.get(i, set())) for i, v in self.Ntl.times.items()}
+            # routes may run past T - 1 (the horizon is soft for the upper bound): the
+            # upper-bound network then has the horizon that holds them all
+            T_ub = max(T, points['horizon'])
+            times = {i: sorted(set(v) | add_t.get(i, set()) | ({T_ub - 1} if T_ub > T else set()))
+                     for i, v in self.Ntl.times.items()}
             charges = {i: sorted(set(v) | add_g.get(i, set())) for i, v in self.Ntl.charges.items()}
+        param_ub = {k: v for k, v in self.param.items() if k not in ('upper_bound', 'ddd_log')}
+        if T_ub > T:
+            param_ub['T'] = T_ub
+            # electricity prices for the extra steps: the price of the last step
+            cc = dict(param_ub['charge_cost'])
+            for i in self.N.nodes:
+                for t in range(T, T_ub):
+                    cc[(i, t)] = cc.get((i, T - 1), 0)
+            param_ub['charge_cost'] = cc
         best, tried = None, []
         skip = {'model', 'x_load', 'x_ener', '_cons', '_sessions', 'n', 'a_c', 'a_s', 'z', 'a'}
         for design in self._pool_designs(M, cfg.get('pool', 3)):
             probe = object.__new__(type(self))
             probe.__dict__.update({k: v for k, v in self.__dict__.items() if k not in skip})
-            probe.param = {k: v for k, v in self.param.items() if k not in ('upper_bound', 'ddd_log')}
+            probe.param = dict(param_ub)
             t0 = time.time()
             try:
                 res = upper_bound_on_instance(probe, times, charges,

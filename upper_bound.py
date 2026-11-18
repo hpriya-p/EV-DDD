@@ -217,9 +217,11 @@ class PessimisticChargeTimeNetwork(ChargeTimeNetwork):
         return self.edge_raw[e][1] - e[0][2]
 
     @classmethod
-    def from_network(cls, base, times, charges):
+    def from_network(cls, base, times, charges, param=None):
         net = cls.__new__(cls)
         net.__dict__.update({k: v for k, v in base.__dict__.items() if k != 'Ntl'})
+        if param is not None:
+            net.param = param           # e.g. a longer horizon T for the upper bound
         T, L, t_min = net.param['T'], net.param['L'], net.param['min_time']
         # the given points, plus the initial ones (always retained by Bi-DDD)
         net.times = {i: sorted({int(t) for t in base.times[i]}
@@ -284,7 +286,7 @@ def upper_bound_on_instance(inst, times, charges, time_limit=None, mip_gap=1e-4,
     """
     assert design_mode in ('exact', 'at_least'), design_mode
     t0 = time.time()
-    inst.Ntl = PessimisticChargeTimeNetwork.from_network(inst.Ntl, times, charges)
+    inst.Ntl = PessimisticChargeTimeNetwork.from_network(inst.Ntl, times, charges, param=inst.param)
     inst.construct_model()
     if fixed_design is not None:
         for name, var in (('a_c', inst.a_c), ('a_s', inst.a_s), ('n', inst.n), ('z', inst.z)):
@@ -397,11 +399,11 @@ def replay_routes(inst, x_eners):
     """The relaxation's vehicle routes ({k: {edge: flow}} on inst.Ntl) followed with true
     travel times, energy use and charging: [(k, ok, [(station, charge, time), ...])].
     A route waits for its planned departure when it arrives early, and ends at its first
-    arrival at its final station (it can wait there until T - 1; the relaxation, which
-    rounds charge up, may add empty round trips after it that a real battery cannot
-    make). ok is False when it runs out of battery, cannot charge as planned, or runs
-    past T - 1. Charger capacity is not checked here: the MIP on the pessimistic network
-    enforces it."""
+    arrival at its final station (it can wait there; the relaxation, which rounds charge
+    up, may add empty round trips after it that a real battery cannot make). ok is False
+    when it runs out of battery or cannot charge as planned. A route may run past T - 1:
+    the upper bound is then computed on a network with a longer horizon (route_points).
+    Charger capacity is not checked here: the MIP on the pessimistic network enforces it."""
     ctn, param, T = inst.Ntl, inst.param, inst.param['T']
     routes = []
     for k, flow in x_eners.items():
@@ -435,8 +437,7 @@ def replay_routes(inst, x_eners):
                 elif kind == 'swap':
                     g, t = v2[1], t + ctn.edge_times[e]
                     states.append((v2[0], g, t))
-                if not ok or t > T - 1:
-                    ok = False
+                if not ok:
                     break
                 if kind in _TRANSIT and v2[0] == last:
                     break                                       # arrived: wait here until T - 1
@@ -444,15 +445,17 @@ def replay_routes(inst, x_eners):
     return routes
 
 
-def earliest_route(inst, k):
+def earliest_route(inst, k, horizon=None):
     """Earliest-arrival route of commodity k's loaded truck (leaving its origin full at
     min_time; transit with consumption dH; charging as in the pessimistic network; swaps
     to a full battery where the mode allows them): [(station, charge, time), ...] up to
-    its arrival at the destination, or None if it cannot arrive by T - 1."""
+    its arrival at the destination, or None if it cannot arrive by horizon - 1 (default
+    2 T: arriving after T - 1 is allowed, see route_points)."""
     import heapq
     param, N = inst.param, inst.N
     o, z = list(param['D'])[k]
     T, L, t0 = param['T'], param['L'], param.get('min_time', 0)
+    T = horizon or 2 * T
     curve = param['speed_curve']
     charge_nodes = set(param['charge_nodes'])
     swap_time = {i: param['bat_swap_time'] for i in param.get('battery_nodes', [])}
@@ -492,17 +495,22 @@ def earliest_route(inst, k):
 
 
 def route_points(inst, x_eners):
-    """Points to add to the pessimistic network: the replayed routes that fit, plus the
-    earliest-arrival route of every commodity with a route that does not.
+    """Points to add to the pessimistic network: the replayed routes that can be driven
+    (battery never below 0), plus the earliest-arrival route of every commodity (always:
+    a few points, and more points never make the upper bound worse).
+    Routes may end after T - 1; summary['horizon'] is the horizon (at least T) that
+    holds them all, for the upper-bound network.
     Returns ({station: {times}}, {station: {charges}}, summary)."""
     T, t_min, L = inst.param['T'], inst.param.get('min_time', 0), inst.param['L']
     times, charges = {}, {}
+    latest = [T - 1]
 
     def add(states):
         for i, g, t in states:
             g, t = _num(g), int(t)
-            if t_min <= t <= T - 1:
+            if t >= t_min:
                 times.setdefault(i, set()).add(t)
+                latest.append(t)
             if isinstance(g, int) and 0 <= g <= L:
                 charges.setdefault(i, set()).add(g)
 
@@ -516,7 +524,7 @@ def route_points(inst, x_eners):
     covered = {k for k, ok, _ in routes if ok}
     fallback, unreachable = [], []
     for k in range(len(inst.param['D'])):
-        if k in failed or k not in covered:
+        if True:                                  # every commodity, not only uncovered ones
             route = earliest_route(inst, k)
             if route is None:
                 unreachable.append(k)
@@ -524,6 +532,7 @@ def route_points(inst, x_eners):
                 add(route)
                 fallback.append(k)
     summary = {'routes': len(routes), 'replayed_ok': sum(ok for _, ok, _ in routes),
-               'fallback': fallback, 'unreachable': unreachable,
+               'uncovered': sorted(failed | (set(range(len(inst.param['D']))) - covered)),
+               'fallback': fallback, 'unreachable': unreachable, 'horizon': max(latest) + 1,
                'points': sum(len(v) for v in times.values()) + sum(len(v) for v in charges.values())}
     return times, charges, summary
