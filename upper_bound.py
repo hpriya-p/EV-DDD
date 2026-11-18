@@ -395,7 +395,7 @@ def _charge_pieces(param, i, g, target):
     return pieces
 
 
-def replay_routes(inst, x_eners, repair=True):
+def replay_routes(inst, x_eners, repair=True, a_s=None):
     """The relaxation's vehicle routes ({k: {edge: flow}} on inst.Ntl) followed with true
     travel times, energy use and charging: [(k, ok, states, sessions, flow)], states
     [(station, charge, time), ...] and sessions the true charging pieces
@@ -406,14 +406,18 @@ def replay_routes(inst, x_eners, repair=True):
     and ends at its first arrival at its final station (it can wait there; the relaxation
     may add empty round trips after it that a real battery cannot make).
     repair: before a leg it cannot complete, the vehicle tops up at the station it leaves,
-    if chargers can be installed there, by just enough for the leg; the rest of the route
+    if it is a charging node, and not a swap site in a_s ({station: 1 if a swap site is
+    installed}, the relaxation's design: with site choice a proxy hosts one or the other),
+    by just enough for the leg; the rest of the route
     runs later. A route may run past T - 1 (route_points then gives the upper-bound network
     a longer horizon). ok is False when the battery would still go below 0.
     Charger capacity is not enforced here: route_points reports where the repaired routes
     exceed the chargers, and the MIP on the pessimistic network enforces it."""
     ctn, param = inst.Ntl, inst.param
     curve, L = param['speed_curve'], param['L']
-    can_charge = {i for i in param['charge_nodes'] if param['charge_rate'].get(i, 0) > 0}
+    swap_sites = {int(i) for i, v in (a_s or {}).items() if v > 0.5}
+    can_charge = {i for i in param['charge_nodes'] if param['charge_rate'].get(i, 0) > 0
+                  and i not in swap_sites}
     routes = []
 
     def charge(i, g, t, target, sessions):
@@ -542,7 +546,7 @@ def earliest_route(inst, k, horizon=None):
     return None
 
 
-def route_points(inst, x_eners, a_c=None):
+def route_points(inst, x_eners, a_c=None, a_s=None):
     """Points to add to the pessimistic network: the replayed routes that can be driven
     (battery never below 0), plus the earliest-arrival route of every commodity (always:
     a few points, and more points never make the upper bound worse).
@@ -562,7 +566,7 @@ def route_points(inst, x_eners, a_c=None):
             if isinstance(g, int) and 0 <= g <= L:
                 charges.setdefault(i, set()).add(g)
 
-    routes = replay_routes(inst, x_eners) if x_eners else []
+    routes = replay_routes(inst, x_eners, a_s=a_s) if x_eners else []
     failed = set()
     for k, ok, states, _, _ in routes:
         if ok:
