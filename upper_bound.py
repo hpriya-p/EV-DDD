@@ -395,25 +395,45 @@ def _charge_pieces(param, i, g, target):
     return pieces
 
 
-def replay_routes(inst, x_eners):
+def replay_routes(inst, x_eners, repair=True):
     """The relaxation's vehicle routes ({k: {edge: flow}} on inst.Ntl) followed with true
-    travel times, energy use and charging: [(k, ok, [(station, charge, time), ...])].
-    A route waits for its planned departure when it arrives early, and ends at its first
-    arrival at its final station (it can wait there; the relaxation, which rounds charge
-    up, may add empty round trips after it that a real battery cannot make). ok is False
-    when it runs out of battery or cannot charge as planned. A route may run past T - 1:
-    the upper bound is then computed on a network with a longer horizon (route_points).
-    Charger capacity is not checked here: the MIP on the pessimistic network enforces it."""
-    ctn, param, T = inst.Ntl, inst.param, inst.param['T']
+    travel times, energy use and charging: [(k, ok, states, sessions, flow)], states
+    [(station, charge, time), ...] and sessions the true charging pieces
+    [(station, start step, steps, use per step in charger units)].
+    Every route starts with a full battery (as in the model). A route waits for its planned
+    departure when it arrives early, charges to the level the relaxation plans after a
+    charging edge (the relaxation rounds charge up, so its later legs assume that level),
+    and ends at its first arrival at its final station (it can wait there; the relaxation
+    may add empty round trips after it that a real battery cannot make).
+    repair: before a leg it cannot complete, the vehicle tops up at the station it leaves,
+    if chargers can be installed there, by just enough for the leg; the rest of the route
+    runs later. A route may run past T - 1 (route_points then gives the upper-bound network
+    a longer horizon). ok is False when the battery would still go below 0.
+    Charger capacity is not enforced here: route_points reports where the repaired routes
+    exceed the chargers, and the MIP on the pessimistic network enforces it."""
+    ctn, param = inst.Ntl, inst.param
+    curve, L = param['speed_curve'], param['L']
+    can_charge = {i for i in param['charge_nodes'] if param['charge_rate'].get(i, 0) > 0}
     routes = []
+
+    def charge(i, g, t, target, sessions):
+        pieces = _charge_pieces(param, i, g, target)
+        if pieces is None:
+            return None
+        for g2, dt in pieces:
+            sessions.append((i, t, dt, (g2 - g) / (dt * curve[_get_q(curve, g)]['speed'])))
+            g, t = g2, t + dt
+        return g, t
+
     for k, flow in x_eners.items():
         flow = {e: x for e, x in flow.items() if x > 0.5}
         if not flow:
             continue
-        for P in ctn.flow_decomposition(flow):
-            i0, g, t = P[0][0][0], P[0][0][1], P[0][0][2]
+        for P, val in ctn.flow_decomposition(flow).items():
+            i0, t = P[0][0][0], P[0][0][2]
+            g = L                                               # every vehicle starts full
             last = P[-1][1][0]
-            states, ok = [(i0, g, t)], True
+            states, sessions, ok = [(i0, g, t)], [], True
             for e in P:
                 v1, v2, _ = e
                 kind = ctn.edge_types[e]
@@ -421,28 +441,56 @@ def replay_routes(inst, x_eners):
                     t = v1[2]
                     states.append((v1[0], g, t))
                 if kind in _TRANSIT:
-                    g, t = g - (ctn.edge_dists[e] - ctn.edge_charges[e]), t + ctn.edge_times[e]
+                    use = ctn.edge_dists[e] - ctn.edge_charges[e]
+                    if repair and g < use and v1[0] in can_charge and use <= L:
+                        r = charge(v1[0], g, t, use, sessions)   # top up just enough for this leg
+                        if r is not None:
+                            g, t = r
+                            states.append((v1[0], g, t))
+                    g, t = g - use, t + ctn.edge_times[e]
                     ok = g >= 0
                     states.append((v2[0], g, t))
                 elif kind == 'charge':
-                    # charge to the level the relaxation plans after this edge (its head); the
-                    # relaxation rounds charge up, so its later legs assume that level
                     target = max(v2[1], v1[1] - ctn.edge_dists[e] + ctn.edge_charges[e])
-                    pieces = _charge_pieces(param, v1[0], g, target) if g < target else []
-                    if pieces is None:
-                        ok = False
-                    for g, dt in pieces or []:
-                        t += dt
-                        states.append((v1[0], g, t))
+                    if g < target:
+                        r = charge(v1[0], g, t, target, sessions)
+                        if r is None:
+                            ok = False
+                        else:
+                            g, t = r
+                            states.append((v1[0], g, t))
                 elif kind == 'swap':
                     g, t = v2[1], t + ctn.edge_times[e]
                     states.append((v2[0], g, t))
                 if not ok:
                     break
                 if kind in _TRANSIT and v2[0] == last:
-                    break                                       # arrived: wait here until T - 1
-            routes.append((k, ok, states))
+                    break                                       # arrived: wait here
+            routes.append((k, ok, states, sessions, val))
     return routes
+
+
+def capacity_violations(inst, routes, a_c=None):
+    """Stations where the true charging sessions of `routes` (replay_routes; only the routes
+    that can be driven) exceed the chargers: existing + a_c (new chargers, {station: n}).
+    Returns {station: [(step, load, capacity), ...]} in charger units."""
+    import collections
+    p = inst.param
+    existing = {i: 1 for i in p.get('existing_charge_nodes', [])}
+    existing.update(p.get('existing_chargers', {}))
+    new = {int(i): v for i, v in (a_c or {}).items()}
+    load = collections.defaultdict(float)
+    for k, ok, states, sessions, val in routes:
+        if ok:
+            for i, t0, dt, use in sessions:
+                for s_ in range(t0, t0 + dt):
+                    load[i, s_] += use * val
+    over = collections.defaultdict(list)
+    for (i, s_), u in sorted(load.items()):
+        cap = p['charge_rate'][i] * (existing.get(i, 0) + new.get(i, 0))
+        if u > cap + max(1e-6, 1e-4 * cap):
+            over[i].append((s_, u, cap))
+    return dict(over)
 
 
 def earliest_route(inst, k, horizon=None):
@@ -494,7 +542,7 @@ def earliest_route(inst, k, horizon=None):
     return None
 
 
-def route_points(inst, x_eners):
+def route_points(inst, x_eners, a_c=None):
     """Points to add to the pessimistic network: the replayed routes that can be driven
     (battery never below 0), plus the earliest-arrival route of every commodity (always:
     a few points, and more points never make the upper bound worse).
@@ -516,12 +564,13 @@ def route_points(inst, x_eners):
 
     routes = replay_routes(inst, x_eners) if x_eners else []
     failed = set()
-    for k, ok, states in routes:
+    for k, ok, states, _, _ in routes:
         if ok:
             add(states)
         else:
             failed.add(k)
-    covered = {k for k, ok, _ in routes if ok}
+    covered = {k for k, ok, *_ in routes if ok}
+    over = capacity_violations(inst, routes, a_c)
     fallback, unreachable = [], []
     for k in range(len(inst.param['D'])):
         if True:                                  # every commodity, not only uncovered ones
@@ -531,7 +580,10 @@ def route_points(inst, x_eners):
             else:
                 add(route)
                 fallback.append(k)
-    summary = {'routes': len(routes), 'replayed_ok': sum(ok for _, ok, _ in routes),
+    summary = {'routes': len(routes), 'replayed_ok': int(sum(r[1] for r in routes)),
+               # charger capacity of the repaired routes, with the relaxation's chargers
+               # (the upper-bound MIP enforces capacity; this shows where it must deviate)
+               'over_capacity': {int(i): len(v) for i, v in over.items()},
                'uncovered': sorted(failed | (set(range(len(inst.param['D']))) - covered)),
                'fallback': fallback, 'unreachable': unreachable, 'horizon': max(latest) + 1,
                'points': sum(len(v) for v in times.values()) + sum(len(v) for v in charges.values())}

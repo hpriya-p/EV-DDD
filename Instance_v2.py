@@ -276,7 +276,11 @@ class Instance:
 
 
     def __constr_init_cond_x(self, i):
-        LHS = gp.quicksum(self.x_ener[e, k] for k in range( self.K) for g in self.Ntl.charges[i] for e in self.multi_out_edges((i, g, self.param['min_time'], self.Ntl.get_q(i,g))))
+        # every vehicle starts with a full battery: only (i, L, min_time) is a start node
+        # (edges out of (i, g, min_time) with g < L carry no flow, see _start_ub)
+        L = self.param['L']
+        LHS = gp.quicksum(self.x_ener[e, k] for k in range(self.K) if L in self.Ntl.charges[i]
+                          for e in self.multi_out_edges((i, L, self.param['min_time'], self.Ntl.get_q(i, L))))
         RHS = self.n[i] + sum(v for nodes, v in self.param['D'].items() if nodes[0] == i)
         self._cons[('init_cond', i)] = self.model.addConstr(LHS == RHS, name='init_cond_x[' + str(i) +']')
         
@@ -421,7 +425,7 @@ class Instance:
         M.Params.SolutionNumber = 0
         return designs
 
-    def _upper_bound_step(self, M, cfg, x_eners=None):
+    def _upper_bound_step(self, M, cfg, x_eners=None, a_c=None):
         """
         Try the pool's designs on the pessimistic network of the current discretization
         (see the 'upper_bound' parameter). Returns the best result of upper_bound_on_instance
@@ -440,7 +444,7 @@ class Instance:
         T = self.param['T']
         T_ub = T
         if cfg.get('route_points', True):
-            add_t, add_g, points = route_points(self, x_eners or {})
+            add_t, add_g, points = route_points(self, x_eners or {}, a_c)
             # routes may run past T - 1 (the horizon is soft for the upper bound): the
             # upper-bound network then has the horizon that holds them all
             T_ub = max(T, points['horizon'])
@@ -602,7 +606,7 @@ class Instance:
         for e in self.Ntl.Ntl.edges:
             for k in range(self.K):
                 self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_load', e, k))
-                self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
+                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._start_ub(e), vtype=gp.GRB.INTEGER, name=self.__get_var_name('x_ener', e, k))
         
            
         self.n = dict()
@@ -735,6 +739,14 @@ class Instance:
         return {'path': disc['path'], 'iteration': disc['iteration'], 'points_added': added,
                 'lower_bound': disc.get('lower_bound'), 'elapsed': disc.get('elapsed') or 0}
 
+    def _start_ub(self, e):
+        """0 for an edge leaving a start node (time min_time) below a full battery: every
+        vehicle starts full, and start nodes have no flow balance, so these edges are closed
+        by bounds. Otherwise unbounded."""
+        if e[0][2] == self.param['min_time'] and e[0][1] < self.param['L']:
+            return 0
+        return gp.GRB.INFINITY
+
     def _load_ub(self, e, k):
         """
         Upper bound of x_load[e, k]: 0 if e leaves commodity k's origin after
@@ -742,6 +754,8 @@ class Instance:
         is the constraint sum_{e in out(o_k, g, t)} x^k_e = 0 for t > latest_origin_time,
         written as bounds since flows are non-negative), otherwise unbounded.
         """
+        if self._start_ub(e) == 0:
+            return 0
         latest = self.param.get('latest_origin_time')
         if latest is not None and e[0][0] == self._origins[k] and e[0][2] > latest:
             return 0
@@ -812,7 +826,7 @@ class Instance:
             for k in range(self.K):
                 self.x_load[e, k] = self.model.addVar(lb=0, ub=self._load_ub(e, k), vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_load', e, k))
-                self.x_ener[e, k] = self.model.addVar(lb=0, vtype=gp.GRB.INTEGER,
+                self.x_ener[e, k] = self.model.addVar(lb=0, ub=self._start_ub(e), vtype=gp.GRB.INTEGER,
                                                       name=self.__get_var_name('x_ener', e, k))
  
 
@@ -1103,7 +1117,7 @@ class Instance:
                     # pessimistic network, whose solutions are feasible for the full problem.
                     if ub_cfg and not LP_relax and n_iter % ub_cfg.get('every', 5) == 0:
                         t_ub = time.time()
-                        res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners)
+                        res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners, a_)
                         if res is not None and (best_ub is None or res['upper_bound'] < best_ub['upper_bound']):
                             best_ub = dict(res, iteration=n_iter)
                         ub = best_ub['upper_bound'] if best_ub else None
