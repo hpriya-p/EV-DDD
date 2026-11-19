@@ -137,6 +137,14 @@ class Instance:
         #                           edge into such a station then understates its arrival
         #                           time by less than 'step' steps. Adding points never
         #                           changes the problem, so the network stays a relaxation
+        #   adaptive_grid (dict)  – (optional) {'step': 10, 'stations_per_iteration': 3,
+        #                           'min_steps': 10}: after each relaxation whose solution uses
+        #                           artificial edges, the time grid of 'time_grid' (a point every
+        #                           'step' steps over the times some commodity can be there) is
+        #                           added at the stations where those edges understate arrival
+        #                           times the most (in total), among stations where some edge
+        #                           understates by at least 'min_steps' and whose grid is not yet
+        #                           retained. Logged as 'adaptive_grid' events
         #   mip_gap_schedule (list) – (optional) [[seconds, gap], ...]: before each relaxation,
         #                           its MIPGap is the gap of the last entry whose seconds the
         #                           solve's elapsed time (counting earlier attempts of a resumed
@@ -741,16 +749,19 @@ class Instance:
         self.config = [c for c in self.config if c not in self.UPDATE_POLICIES] + [policy]
         self.Ntl.config = [c for c in self.Ntl.config if c not in self.UPDATE_POLICIES] + [policy]
 
-    def _time_grid_points(self):
-        """{station: [times]} of param['time_grid'] (see its description)."""
-        cfg = self.param['time_grid']
-        step, t0, T = int(cfg.get('step', 10)), self.param['min_time'], self.param['T']
+    def _time_grid_points(self, stations=None, step=None):
+        """{station: [times]} of param['time_grid'] (see its description), or of the given
+        stations and step."""
+        cfg = self.param.get('time_grid') or {}
+        stations = cfg['stations'] if stations is None else stations
+        step = int(step if step is not None else cfg.get('step', 10))
+        t0, T = self.param['min_time'], self.param['T']
         rev = self.N.reverse(copy=False) if self.N.is_directed() else self.N
         dist = [(nx.single_source_dijkstra_path_length(self.N, o, weight='time'),
                  nx.single_source_dijkstra_path_length(rev, z, weight='time'))
                 for (o, z) in (self.param.get('D') or {})]
         grid = {}
-        for i in cfg['stations']:
+        for i in stations:
             i = int(i)
             if i not in self.N.nodes:
                 raise ValueError(f"time_grid station {i} is not in the network")
@@ -764,6 +775,43 @@ class Instance:
             if pts:
                 grid[i] = sorted(pts)
         return grid
+
+    def _adaptive_grid(self, artificial):
+        """Add the time grid at the stations where the artificial edges in `artificial`
+        understate arrival times the most (param['adaptive_grid']). Returns
+        {station: {'understated_steps', 'max_steps', 'points_added'}} for the stations gridded."""
+        cfg = self.param.get('adaptive_grid')
+        if not cfg or not artificial:
+            return {}
+        step = int(cfg.get('step', 10))
+        per_iteration = int(cfg.get('stations_per_iteration', 3))
+        min_steps = cfg.get('min_steps', step)
+        T, ctn = self.param['T'], self.Ntl
+        under = {}
+        for e in artificial:
+            if e not in ctn.edge_types or ctn.edge_types[e] == 'wait':
+                continue                      # gone after an update, or a wait (no true duration)
+            v1, v2, _ = e
+            if isinstance(v1[0], str) or isinstance(v2[0], str):
+                continue                      # boundary dummy nodes
+            u = min(v1[2] + ctn.edge_times[e], T - 1) - v2[2]
+            if u > 0:
+                under.setdefault(v2[0], []).append(u)
+        ranked = sorted(((sum(us), max(us), j) for j, us in under.items() if max(us) >= min_steps), reverse=True)
+        chosen, info = {}, {}
+        for total, worst, j in ranked:
+            pts = self._time_grid_points([j], step).get(j, [])
+            missing = set(pts) - set(ctn.times[j])
+            if not missing:
+                continue                      # grid already retained here
+            chosen[j] = pts
+            info[j] = {'understated_steps': int(total), 'max_steps': int(worst), 'points_added': len(missing)}
+            if len(chosen) >= per_iteration:
+                break
+        if chosen:
+            ctn.add_times(chosen)
+            self._sessions = dict()           # charging sessions depend on the times
+        return info
 
     def _apply_initial_discretization(self, source, extra_times=None):
         """Start from an earlier run's discretization (see 'initial_discretization'), plus
@@ -1314,6 +1362,13 @@ class Instance:
                         if self._discretization_size() == before:
                             raise RuntimeError("Bi-DDD cannot refine: the solution uses artificial edges "
                                                f"but none adds a point, e.g. {artificial[:3]}")
+                    gridded = self._adaptive_grid(artificial)
+                    if gridded:
+                        self._log_ddd({'event': 'adaptive_grid', 'iteration': n_iter,
+                                       'stations': {str(j): v for j, v in gridded.items()},
+                                       'elapsed': time.time() - solve_start})
+                        if self.verbose:
+                            print(f"Adaptive grid at stations {sorted(gridded)}")
                     network_is_ddd = 'local_rebuild_update' in self.config
                     self.update_model(penalty=penalty)
 
