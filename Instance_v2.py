@@ -164,6 +164,15 @@ class Instance:
         #                           like a solution at a loose gap (the bound ObjBound stays valid);
         #                           without one it runs on until it finds its first. Not applied
         #                           to the re-solve that certifies a converged solution
+        #   certify_bound (dict)  – (optional) {'every': 5, 'time_limit': 14400, 'mip_gap': None,
+        #                           'mip_focus': None}: every 'every' iterations, after the
+        #                           (possibly time-capped) relaxation solve, continue the same
+        #                           MIP for up to 'time_limit' more seconds (at 'mip_gap', if set)
+        #                           to raise its proven bound; Gurobi resumes its search tree.
+        #                           'mip_focus' (e.g. 3) is set for that continuation only.
+        #                           Logged as 'certify_bound' events. The refinement then uses the
+        #                           improved incumbent. Valid whatever the outcome: ObjBound is a
+        #                           lower bound, and the run keeps the best bound of all iterations
         #   fast_update   (dict)  – (optional) {'policy': 'simple_update', 'seconds': 18000}: use
         #                           this faster update policy until the solve's elapsed time
         #                           (counting earlier attempts of a resumed run) reaches
@@ -446,6 +455,33 @@ class Instance:
 
         M.optimize(stop_after_cap)
         return M.status == gp.GRB.INTERRUPTED and M.SolCount > 0
+
+    def _certify_bound(self, M, cfg, n_iter, solve_start, capped):
+        """Continue the relaxation MIP M for up to cfg['time_limit'] seconds to raise its
+        proven bound (see the 'certify_bound' parameter). Gurobi resumes the interrupted
+        search when the model is unchanged. Returns whether the solve is still short of its
+        MIPGap (the new value of 'capped')."""
+        before = {'bound': M.ObjBound, 'objective': M.ObjVal, 'gap': M.MIPGap}
+        gap0, focus0 = M.Params.MIPGap, M.Params.MIPFocus
+        if cfg.get('mip_gap') is not None:
+            M.setParam('MIPGap', cfg['mip_gap'])
+        if cfg.get('mip_focus') is not None:
+            M.setParam('MIPFocus', cfg['mip_focus'])
+        M.setParam('TimeLimit', cfg.get('time_limit', 14400))
+        t0 = time.time()
+        M.optimize()
+        M.setParam('TimeLimit', gp.GRB.INFINITY)
+        M.setParam('MIPFocus', focus0)
+        M.setParam('MIPGap', gap0)
+        after = {'bound': M.ObjBound, 'objective': M.ObjVal, 'gap': M.MIPGap}
+        self._log_ddd({'event': 'certify_bound', 'iteration': n_iter, 'before': before, 'after': after,
+                       'status': M.Status, 'seconds': time.time() - t0,
+                       'elapsed': time.time() - solve_start})
+        if self.verbose:
+            print(f"Certify bound, iteration {n_iter}: bound {before['bound']:.2f} -> {after['bound']:.2f}, "
+                  f"objective {before['objective']:.2f} -> {after['objective']:.2f}")
+        # stopped by the time limit, or optimal only at a looser 'mip_gap': short of MIPGap
+        return M.Status != gp.GRB.OPTIMAL or M.MIPGap > gap0 + 1e-12
 
     def _pool_designs(self, M, limit):
         """Distinct designs (a_c, a_s, n, z) of up to `limit` solutions in M's solution pool."""
@@ -1186,6 +1222,10 @@ class Instance:
                     cap = None if (LP_relax or certifying) else self.param.get('iteration_time_limit')
                     capped = self._optimize_capped(M, cap)
                     certifying = False
+                    cert = self.param.get('certify_bound')
+                    if cert and not LP_relax and network_is_ddd and M.SolCount > 0 \
+                            and n_iter % cert.get('every', 5) == 0:
+                        capped = self._certify_bound(M, cert, n_iter, solve_start, capped)
 
                     if M.status != gp.GRB.OPTIMAL and not capped:
                         self.resolve_infeasibility(LP_relax, verbose)
@@ -1207,13 +1247,18 @@ class Instance:
                     # a relaxation, i.e. the DDD network (always, except under the fast policy).
                     relaxation_bound = self._objective_bound(M)
                     if network_is_ddd:
-                        last_valid_bound = relaxation_bound
+                        # every relaxation's bound is a lower bound on the true optimum, so the
+                        # run's lower bound is the best of them (a time-capped or certified
+                        # solve can leave a later iteration's bound below an earlier one's)
+                        last_valid_bound = relaxation_bound if last_valid_bound is None \
+                            else max(last_valid_bound, relaxation_bound)
                     last_bound = last_valid_bound
                     # Discretization and size of the network this relaxation was solved on
                     # (before update() refines it for the next iteration).
                     self._log_ddd({'event': 'iteration', 'iteration': n_iter,
                                    'lower_bound': relaxation_bound if network_is_ddd else None,
                                    'relaxation_bound': relaxation_bound,
+                                   'best_lower_bound': last_valid_bound,
                                    'update_policy': fast['policy'] if fast_active else final_policy,
                                    'objective': M.ObjVal,
                                    'mip_gap': M.Params.MIPGap,
