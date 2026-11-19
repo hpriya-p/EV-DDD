@@ -1,5 +1,6 @@
 from ChargeTimeNetwork_v2 import *
 import bisect
+import math
 from copy import deepcopy
 import numpy as np
 import gurobipy as gp
@@ -128,6 +129,14 @@ class Instance:
         #                           dict {'times': {node: [...]}, 'charges': {node: [...]}}.
         #                           A log from a run with a different T, network type
         #                           (default/heuristic) or set of stations is refused
+        #   time_grid     (dict)  – (optional) {'stations': [...], 'step': 10}: at each listed
+        #                           station, a time point every 'step' steps over the times
+        #                           some commodity can be there (from min_time + fastest
+        #                           travel from its origin to T-1 - fastest travel to its
+        #                           destination), added to the initial discretization. An
+        #                           edge into such a station then understates its arrival
+        #                           time by less than 'step' steps. Adding points never
+        #                           changes the problem, so the network stays a relaxation
         #   mip_gap_schedule (list) – (optional) [[seconds, gap], ...]: before each relaxation,
         #                           its MIPGap is the gap of the last entry whose seconds the
         #                           solve's elapsed time (counting earlier attempts of a resumed
@@ -205,8 +214,13 @@ class Instance:
         # control printing via self.verbose
         self.verbose = self.param.get('verbose', True)
         self.resumed_from = None
+        grid = self._time_grid_points() if self.param.get('time_grid') else {}
         if self.param.get('initial_discretization') is not None:
-            self.resumed_from = self._apply_initial_discretization(self.param['initial_discretization'])
+            self.resumed_from = self._apply_initial_discretization(self.param['initial_discretization'], grid)
+        elif grid:
+            added = self.Ntl.set_discretization(grid, None)
+            if self.verbose:
+                print(f"Time grid: {added} points added at {sorted(grid)}")
         if self.verbose:
             print("Size of network: ", len(self.Ntl.Ntl.nodes), " nodes, ", len(self.Ntl.Ntl.edges), " edges")
         if seed is not None:
@@ -727,8 +741,33 @@ class Instance:
         self.config = [c for c in self.config if c not in self.UPDATE_POLICIES] + [policy]
         self.Ntl.config = [c for c in self.Ntl.config if c not in self.UPDATE_POLICIES] + [policy]
 
-    def _apply_initial_discretization(self, source):
-        """Start from an earlier run's discretization (see 'initial_discretization')."""
+    def _time_grid_points(self):
+        """{station: [times]} of param['time_grid'] (see its description)."""
+        cfg = self.param['time_grid']
+        step, t0, T = int(cfg.get('step', 10)), self.param['min_time'], self.param['T']
+        rev = self.N.reverse(copy=False) if self.N.is_directed() else self.N
+        dist = [(nx.single_source_dijkstra_path_length(self.N, o, weight='time'),
+                 nx.single_source_dijkstra_path_length(rev, z, weight='time'))
+                for (o, z) in (self.param.get('D') or {})]
+        grid = {}
+        for i in cfg['stations']:
+            i = int(i)
+            if i not in self.N.nodes:
+                raise ValueError(f"time_grid station {i} is not in the network")
+            pts = set()
+            for from_o, to_z in dist:
+                if i in from_o and i in to_z:
+                    lo, hi = t0 + math.ceil(from_o[i]), T - 1 - math.ceil(to_z[i])
+                    if lo <= hi:
+                        pts.update(range(lo, hi + 1, step))
+                        pts.add(hi)
+            if pts:
+                grid[i] = sorted(pts)
+        return grid
+
+    def _apply_initial_discretization(self, source, extra_times=None):
+        """Start from an earlier run's discretization (see 'initial_discretization'), plus
+        extra_times ({station: [times]}, e.g. the time grid) in the same rebuild."""
         if isinstance(source, dict):
             disc = {'times': source.get('times'), 'charges': source.get('charges'),
                     'iteration': None, 'elapsed': 0, 'path': None, 'start': {}}
@@ -745,7 +784,10 @@ class Instance:
         unknown = {int(i) for grid in (disc['times'], disc['charges']) for i in (grid or {})} - set(self.N.nodes)
         if unknown:
             raise ValueError(f"initial discretization has stations not in this network: {sorted(unknown)[:10]}")
-        added = self.Ntl.set_discretization(disc['times'], disc['charges'])
+        times = {int(i): list(v) for i, v in (disc['times'] or {}).items()}
+        for i, v in (extra_times or {}).items():
+            times[i] = sorted(set(times.get(i, [])) | set(v))
+        added = self.Ntl.set_discretization(times, disc['charges'])
         if self.verbose:
             print(f"Resumed discretization from {disc['path'] or 'dict'} (iteration {disc['iteration']}): "
                   f"{added} points added")
