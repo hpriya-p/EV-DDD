@@ -137,6 +137,10 @@ class Instance:
         #                           edge into such a station then understates its arrival
         #                           time by less than 'step' steps. Adding points never
         #                           changes the problem, so the network stays a relaxation
+        #   vehicle_time_cost (float) – (optional, default 0) cost per step a vehicle spends on
+        #                           the road, loaded or empty: the objective gets
+        #                           vehicle_time_cost * (true travel time of e) * x_ener[e, k]
+        #                           for every transit edge e
         #   adaptive_grid (dict)  – (optional) {'step': 10, 'stations_per_iteration': 3,
         #                           'min_steps': 10}: after each relaxation whose solution uses
         #                           artificial edges, the time grid of 'time_grid' (a point every
@@ -723,6 +727,10 @@ class Instance:
                         if self.Ntl.edge_types[e] != 'wait')
             + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_charges[e] * self.param['charge_cost'][(e[0][0], e[0][2])]
                           for e in self.Ntl.Ntl.edges for k in range(self.K) if self.Ntl.edge_charges[e] > 0)
+            # vehicle time on the road, loaded or empty (true travel time of the edge)
+            + gp.quicksum(self.x_ener[e, k] * self.Ntl.edge_times[e] * self.param.get('vehicle_time_cost', 0)
+                          for e in self.Ntl.Ntl.edges for k in range(self.K)
+                          if self.param.get('vehicle_time_cost', 0) and self.Ntl.edge_types[e] in ('transit_H', 'transit_L'))
             + gp.quicksum(self.param['stat_cost'][i] * self.a_c[i] for i in self.param['charge_nodes'])
             + gp.quicksum(self.param.get('site_install_cost', 0) * self.a_s[i]
                           for i in set(self.param['tractor_nodes']) | set(self.param['battery_nodes']))
