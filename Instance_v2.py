@@ -6,6 +6,7 @@ import numpy as np
 import gurobipy as gp
 import time
 import json
+import os
 import signal
 import datetime
 
@@ -1137,6 +1138,35 @@ class Instance:
         with open(path, mode) as f:
             f.write(json.dumps(_jsonable(record)) + '\n')
 
+    def _save_upper_bound(self, best, lower_bound):
+        """Write an improved upper-bound solution (design and flows) beside the ddd_log:
+        upper_bound_it<N>.json for the iteration that found it, and upper_bound_best.json,
+        which a resumed run (whose in-memory best starts empty) replaces only when it does
+        better than the solution already there."""
+        path = self.param.get('ddd_log')
+        if not path or not best.get('solution'):
+            return
+        folder = os.path.dirname(os.path.abspath(path))
+        record = _jsonable(dict(best, lower_bound=lower_bound,
+                                gap=(best['upper_bound'] - lower_bound) / best['upper_bound']
+                                if lower_bound is not None and best['upper_bound'] else None,
+                                saved=datetime.datetime.now().isoformat(timespec='seconds')))
+        try:
+            with open(os.path.join(folder, f"upper_bound_it{best['iteration']}.json"), 'w') as f:
+                json.dump(record, f)
+            best_path = os.path.join(folder, 'upper_bound_best.json')
+            if os.path.exists(best_path):
+                with open(best_path) as f:
+                    if json.load(f).get('upper_bound', float('inf')) <= best['upper_bound']:
+                        return
+            tmp = best_path + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump(record, f)
+            os.replace(tmp, best_path)
+        except (OSError, ValueError) as err:          # never let saving stop the solve
+            self._log_ddd({'event': 'save_upper_bound_failed', 'iteration': best.get('iteration'),
+                           'error': str(err)})
+
     def solve(self, LP_relax=False, penalty=True, verbose=True, LB=0):
         # A resumed run (see 'initial_discretization') continues the earlier run's counts:
         # iterations are numbered on from its last logged one and elapsed time includes its
@@ -1295,6 +1325,7 @@ class Instance:
                         res, tried, points = self._upper_bound_step(M, ub_cfg, x_eners, a_, as_, x_loads)
                         if res is not None and (best_ub is None or res['upper_bound'] < best_ub['upper_bound']):
                             best_ub = dict(res, iteration=n_iter)
+                            self._save_upper_bound(best_ub, last_valid_bound)
                         ub = best_ub['upper_bound'] if best_ub else None
                         gap = (ub - last_valid_bound) / ub if (ub and last_valid_bound is not None) else None
                         self._log_ddd({'event': 'upper_bound', 'iteration': n_iter, 'tried': tried,
